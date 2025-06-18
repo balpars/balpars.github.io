@@ -18,8 +18,6 @@ in other areas of Computer Science. Such as Artificial Intelligence, Android App
 
 My aspiration is to become a Security Researcher. Currently, I am actively engaging in bug bounties, with plans to transition into 0-day research.
 
-My other hobbies are kickboxing and playing guitar.
-
 Skills:
 - Python
 - Java, C#
