@@ -1,11 +1,12 @@
 ---
-title: Hack The Box Bombs Landed CTF Writeup
+title: Hack The Box Bombs Landed CTF Detailed Writeup
 published: 2024-02-23
 draft: false
 tags: ['ctf', 'reverse_engineering', 'htb']
-description: Writeup for the Hack The Box | Bombs landed reverse engineering CTF
+description: Writeup for the Hack The Box | Bombs landed reverse engineering CTF, detailed
 slug: hack-the-box-bombs-landed-writeup
 toc: true
+series: 'Reversing'
 ---
 
 ## \_start:
