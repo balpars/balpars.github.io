@@ -2,13 +2,13 @@
 title: "The Key from Diffie-Hellman"
 published: 2024-03-02
 draft: false
-tags: ['cryptography', 'key-exchange', 'diffie-hellman']
+tags: ['cryptography']
 description: Secure communication over insecure channels using Diffie-Hellman key exchange
 toc: true
 series: 'Cryptography Basics' 
 ---
 
-## Motivation...
+## Motivation... 
 
 Since ancient times the fundamental way of secure communication has always been encryption.
 
@@ -22,7 +22,7 @@ Diffie-Hellman algorithm allows two parties to agree on shared secret key, even 
 Understanding Diffie-Hellman is important, because the concepts here is
 used almost everywhere where we need to exchange keys.
 
-## How?
+## How? 
 
 In essence we are using some public variables and combine it with our private variables to generate the same key.
 
@@ -92,7 +92,7 @@ bga   |        | agb
 
 This is it. Both Bob and Alice now has the same key.
 
-## Math
+## Math 
 
 Math is actually really simple here.
 
@@ -132,7 +132,7 @@ As you can see both reached the same number.
 shared_key = g**(ab) mod n
 ```
 
-## Conclusion
+## Conclusion 
 
 Understanding Diffie-Hellman is important to understand how encryption of modern applications work.
 
@@ -146,7 +146,7 @@ I will cover these problems, especially the man-in-the-middle aspect of key exch
 
 - RSA, PKI, SSL Certificates, Digital Signature
 
-## Sources and Further Reading
+## Sources and Further Reading 
 
 [Secret Key Exchange (Diffie-Hellman) - Computerphile](https://www.youtube.com/watch?v=NmM9HA2MQGI)
 

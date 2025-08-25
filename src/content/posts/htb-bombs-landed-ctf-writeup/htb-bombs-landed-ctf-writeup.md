@@ -2,14 +2,14 @@
 title: Hack The Box Bombs Landed CTF Detailed Writeup
 published: 2024-02-23
 draft: false
-tags: ['ctf', 'reverse_engineering', 'htb']
+tags: ['ctf', 'reversing']
 description: Writeup for the Hack The Box | Bombs landed reverse engineering CTF, detailed
 slug: hack-the-box-bombs-landed-writeup
 toc: true
 series: 'Reversing'
 ---
 
-## \_start:
+## \_start: 
 
 ![1_checksec.png](./1_checksec.png)
 
@@ -25,7 +25,7 @@ Running the program, we don’t get any hints whatsoever. Ltrace doesn’t work,
 
 There are some interesting strings. We see ptrace, which is used by debuggers to attach to a process, we may need bypass any checks used for anti-debugging. For this binary I didn’t need to do anything.
 
-## Reversing
+## Reversing 
 
 ![reversing.PNG](./reversing.png)
 
@@ -47,7 +47,7 @@ We see that this is far from the original strncmp function in C. There’s a whi
 
 We do not see any call to this function yet. Indicating that call to this function will be resolved dynamically if it’s going to be called.
 
-## Debugging
+## Debugging 
 
 Some breakpoints worth putting initially are:
 
