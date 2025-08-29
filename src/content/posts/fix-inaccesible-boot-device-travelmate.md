@@ -1,7 +1,7 @@
 ---
 title: "Inaccessible Boot Device on TravelMate? Here’s the Fix (No Thanks to Intel VMD)"
 published: 2025-08-29
-draft: false
+draft: true
 tags: ['troubleshooting']
 description: Solving the "Inaccessible Boot Device" mystery on a TravelMate laptop with hidden BIOS settings, secret key combos, and lots of regret.
 toc: true
