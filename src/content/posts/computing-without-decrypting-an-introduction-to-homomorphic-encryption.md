@@ -5,12 +5,12 @@ published: 2026-08-12
 draft: false
 tags:
   - cryptography
-description: ""
+description: "What can we design so that even a breached server does not have everything the attacker wants?"
 toc: true
 series: 'Cryptography Basics'
 ---
 
-# Computing on Data You Cannot Read
+	# Computing on Data You Cannot Read
 
 ## Motivation
 
