@@ -1,0 +1,58 @@
+---
+import Layout from '~/layouts/Layout.astro'
+import PageHeader from '~/components/PageHeader.astro'
+import { getSortedPosts } from '~/utils'
+
+const posts = await getSortedPosts()
+
+const vaultEntries = posts
+  .filter((post) => post.data.vault)
+  .sort((a, b) => a.data.title.localeCompare(b.data.title))
+---
+
+<Layout
+  title="Vault"
+  description="A curated collection of cybersecurity techniques and knowledge."
+>
+  <div class="mt-2 sm:mt-0">
+    <PageHeader />
+
+    <div class="my-8">
+      <p class="text-base/7">
+        Vault is a growing collection of cybersecurity techniques, concepts,
+        research, and lessons worth preserving.
+      </p>
+    </div>
+
+    <div class="mt-10">
+      <h2 class="text-xl font-semibold text-heading2 mb-6">
+        Entries
+      </h2>
+
+      {
+        vaultEntries.length > 0 ? (
+          <ul class="list-none p-0 m-0">
+            {vaultEntries.map((post) => (
+              <li class="py-5 border-b border-accent/10">
+                <a
+                  href={`/posts/${post.id}`}
+                  class="text-xl font-semibold text-heading1"
+                >
+                  {post.data.title}
+                </a>
+
+                {post.data.description && (
+                  <p class="mt-2 mb-0 text-base/7 text-foreground">
+                    {post.data.description}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No entries have been added yet.</p>
+        )
+      }
+    </div>
+  </div>
+</Layout>

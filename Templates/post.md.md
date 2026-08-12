@@ -7,6 +7,7 @@ tR += `title: ${title}\n`;
 tR += `author: balpars\n`;
 tR += `published: ${tp.date.now("YYYY-MM-DD")}\n`;
 tR += `draft: true\n`;
+tR += `vault: true\n`;
 tR += `tags: ['test']\n`;
 tR += `description: ""\n`;
 tR += `toc: true\n`;

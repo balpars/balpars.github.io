@@ -9,6 +9,7 @@ const postsCollection = defineCollection({
       published: z.coerce.date(),
       // updated: z.coerce.date().optional(),
       draft: z.boolean().optional().default(false),
+      vault: z.boolean().optional().default(false),
       description: z.string().optional(),
       author: z.string().optional(),
       series: z.string().optional(),
