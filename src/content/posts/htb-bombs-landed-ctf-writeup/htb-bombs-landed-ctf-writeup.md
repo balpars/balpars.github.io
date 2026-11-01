@@ -3,32 +3,32 @@ title: Hack The Box Bombs Landed CTF Detailed Writeup
 published: 2024-02-23
 author: balpars
 draft: false
-tags: ['ctf', 'reversing']
+tags: ['ctf', 'reverse_engineering']
 description: Writeup for the Hack The Box | Bombs landed reverse engineering CTF, detailed
 slug: hack-the-box-bombs-landed-writeup
 toc: true
-series: 'Reversing'
+series: 'Reverse Engineering'
 ---
 
 ## \_start: 
 
-![1_checksec.png](./1_checksec.png)
+![pwndbg checksec on the 32-bit BombsLanded binary showing No RELRO, no stack canary, NX unknown and No PIE at 0x8048000.](./pwndbg-checksec-binary-protections.png)
 
 Using checksec we see that PIE is not enabled, this will make it easier for us to use a disassembler with a debugger simultenously, since the address offsets will be the same. We have a 32-bit binary.
 
 Global Offset Table is corrupted to which will make it harder to debug.
 
-![Running the binary](./run.png)
+![BombsLanded prints Bad luck dude, ltrace fails to find .dynsym, and strings starts listing imports such as dlsym and strncmp.](./bombslanded-run-ltrace-fails.png)
 
 Running the program, we don’t get any hints whatsoever. Ltrace doesn’t work, which indicates the file is statically linked, but we will see that this is not the case.
 
-![Strings](./strings.png)
+![strings output listing ptrace, with the input password, Correct password and Bad luck dude messages highlighted.](./strings-ptrace-password-messages.png)
 
 There are some interesting strings. We see ptrace, which is used by debuggers to attach to a process, we may need bypass any checks used for anti-debugging. For this binary I didn’t need to do anything.
 
 ## Reversing 
 
-![reversing.PNG](./reversing.png)
+![Ghidra decompiled main with numbered arrows on the param_1 check, mmap, memset with 0xc3, the unpacking loops and the memory_addres call.](./ghidra-main-mmap-unpacking.png)
 
 1. We see that the program checks if it had less than 4 command arguments and comparing two variables that it had setup. First argument for main function in C is the argument count.
 2. We first see a call to mmap, which returns a pointer to the starting address of the memory region it allocates. I renamed the variable to memory_address, suddenly the code becomes significantly more readable.
@@ -40,9 +40,9 @@ There’s nothing more we can do here, because we do not know what is in the mem
 
 Before leaving Ghidra, we should also look at other functions, one function should get out attention. The strncmp function.
 
-![strncp.PNG](./strncp.png)
+![Ghidra Symbol Tree with the strncmp function selected below main and several FUN_ functions.](./ghidra-symbol-tree-strncmp.png)
 
-![bp.PNG](./bp.png)
+![Ghidra listing and decompiled strncmp, with an arrow on the JA at 0x08048b66 that controls the while loop XORing s2 with 10.](./ghidra-strncmp-while-loop.png)
 
 We see that this is far from the original strncmp function in C. There’s a while loop that looks interesting, like it’s building a string, probaby the password. We will note the offset for the while loop’s condition to inspect it closer in debugger.
 
@@ -52,7 +52,7 @@ We do not see any call to this function yet. Indicating that call to this functi
 
 Some breakpoints worth putting initially are:
 
-![2bp.PNG](./2bp.png)
+![Ghidra listing with JA at 0x080489ba and JG at 0x080489bf next to the decompiled if statement checking that param_1 is greater than 4.](./ghidra-argument-check-jumps.png)
 
 - first argument for the if statement.
 - second argument for the same if statement to bypass it.
@@ -60,13 +60,13 @@ Some breakpoints worth putting initially are:
 
 We might also need to put breakpoint and step-into the function call to our memory_address if the initial breakpoints aren’t enough to get the password.
 
-![call.PNG](./call.png)
+![Ghidra showing CALL memory_addres at 0x08048aba, the call to the function written dynamically into the mmap region.](./ghidra-call-unpacked-function.png)
 
-![bpss.PNG](./bpss.png)
+![pwndbg sets breakpoints at 0x080489ba, 0x080489bf and 0x08048b66, and info functions lists no defined functions.](./pwndbg-breakpoints-info-functions.png)
 
 Of course no function names.
 
-![gdb.PNG](./gdb.png)
+![pwndbg stopped on the ja at 0x80489ba, where setting bit 6 of EFLAGS turns on the zero flag.](./pwndbg-set-zero-flag.png)
 
 We need to set ZF to bypass first check which is JA. Similarly flipping the sign flag for the second check which is JG, is enough to bypass these checks. Some resources to learn more about gdb and conditonal jumps are below.
 
@@ -76,13 +76,13 @@ We need to set ZF to bypass first check which is JA. Similarly flipping the sign
 
 The program asks for a password. After entering something we land on our third breakpoint as we guessed. Continuing and pressing enter repeatedly, we see that our password is being built step by step in the stack.
 
-![final.PNG](./final.png)
+![pwndbg at the strncmp loop breakpoint 0x8048b66, with arrows on the ja and on the password built on the stack, which is redacted.](./pwndbg-password-built-on-stack.png)
 
 1. Our third breakpoint is hit.
 2. A string is built in the stack.
 
 Finally we test the password we found. We need to run the binary with more than 4 arguments to bypass first check. We could have left it at 4, since the first argument in C main function is the program’s name.
 
-![finall.PNG](./finall.png)
+![BombsLanded run with five arguments accepts the password, which is redacted, and prints you win.](./bombslanded-correct-password-win.png)
 
 We win…

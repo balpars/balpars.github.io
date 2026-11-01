@@ -2,6 +2,7 @@
 import { dateString, SeriesGroup } from '~/utils'
 import { render, type CollectionEntry } from 'astro:content'
 import type { Collation } from '~/types'
+import { getLangFromUrl, readingTimeText, seriesLabel } from '~/i18n'
 
 interface Props {
   post: CollectionEntry<'posts'>
@@ -9,14 +10,17 @@ interface Props {
 }
 
 const { post, class: className } = Astro.props
+const lang = getLangFromUrl(Astro.url)
 const { remarkPluginFrontmatter } = await render(post)
-const { minutesRead } = remarkPluginFrontmatter
+const { readingMinutes } = remarkPluginFrontmatter
+const minutesRead =
+  typeof readingMinutes === 'number' ? readingTimeText(readingMinutes, lang) : undefined
 const seriesFrontmatter = post.data.series
 let series: Collation<'posts'> | undefined
 let seriesPostNumber: number | undefined
 let seriesTotal: number | undefined
 if (seriesFrontmatter) {
-  const seriesGroup = await SeriesGroup.build()
+  const seriesGroup = await SeriesGroup.build(undefined, lang)
   series = seriesGroup.match(seriesFrontmatter)
   if (!series) {
     // This should never happen if the series data is correct
@@ -37,7 +41,7 @@ if (seriesFrontmatter) {
           class="shrink-0 rounded-2xl py-[3px] px-3.5 bg-foreground/1 me-2.5 hover:bg-foreground/5 transition-colors border-1 border-foreground/16 hover:border-foreground/20"
           href={series.url}
         >
-          {series.title} {seriesPostNumber} / {seriesTotal}
+          {seriesLabel(series.title, lang)} {seriesPostNumber} / {seriesTotal}
         </a>
       )
     }

@@ -14,10 +14,13 @@ const fontPath = path.resolve(
 )
 const fontData = fs.readFileSync(fontPath) // Reads the file as a Buffer
 
-const avatarPath = path.resolve(siteConfig.socialCardAvatarImage)
+const avatarPath = siteConfig.socialCardAvatarImage
+  ? path.resolve(siteConfig.socialCardAvatarImage)
+  : undefined
 let avatarData: Buffer | undefined
 let avatarBase64: string | undefined
 if (
+  avatarPath &&
   fs.existsSync(avatarPath) &&
   (path.extname(avatarPath).toLowerCase() === '.jpg' ||
     path.extname(avatarPath).toLowerCase() === '.jpeg')

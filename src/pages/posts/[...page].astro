@@ -1,31 +1,43 @@
 ---
 import type { GetStaticPaths } from 'astro'
 import Layout from '~/layouts/Layout.astro'
-import { getSortedPosts } from '~/utils'
 import Pagination from '~/components/Pagination.astro'
-import siteConfig from '~/site.config'
 import PostPreview from '~/components/PostPreview.astro'
-import PageHeader from '~/components/PageHeader.astro'
+import BlockHeader from '~/components/BlockHeader.astro'
+import TagsSection from '~/components/TagsSection.astro'
+import { getSortedPosts } from '~/utils'
+import { archivePaths } from '~/staticPaths'
+import { getLangFromUrl, t } from '~/i18n'
 
-// Note: Pagination like '/', '/2', '/3' only works with spread param like [...page]
 export const getStaticPaths = (async ({ paginate }) => {
-  const sortedPosts = await getSortedPosts()
-  return paginate(sortedPosts.reverse(), { pageSize: siteConfig.pageSize })
+  return archivePaths(paginate, 'en')
 }) satisfies GetStaticPaths
 
 const { page } = Astro.props
-const pageTitle = 'Archive' + (page.currentPage > 1 ? ` - Page ${page.currentPage}` : '')
+const lang = getLangFromUrl(Astro.url)
+const allPosts = await getSortedPosts(lang)
+const postsHaveTags = allPosts.some((post) => post.data.tags && post.data.tags.length > 0)
+const pageTitle =
+  t(lang, 'archive.title') +
+  (page.currentPage > 1 ? ` - ${t(lang, 'pagination.page')} ${page.currentPage}` : '')
 ---
 
-<Layout title={pageTitle} description="All posts in the archive">
+<Layout title={pageTitle} description={t(lang, 'archive.description')}>
   <div class="mt-2 sm:mt-0">
-    <PageHeader />
     {page.data.map((post) => <PostPreview post={post} />)}
     <Pagination
       prevLink={page.url.prev ? page.url.prev : undefined}
-      prevText="Newer Posts"
+      prevText={t(lang, 'pagination.newer')}
       nextLink={page.url.next ? page.url.next : undefined}
-      nextText="Older Posts"
+      nextText={t(lang, 'pagination.older')}
     />
+    {
+      postsHaveTags && (
+        <section>
+          <BlockHeader>{t(lang, 'home.tags')}</BlockHeader>
+          <TagsSection posts={allPosts} />
+        </section>
+      )
+    }
   </div>
 </Layout>

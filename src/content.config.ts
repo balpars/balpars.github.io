@@ -2,7 +2,19 @@ import { defineCollection, z } from 'astro:content'
 import { glob } from 'astro/loaders'
 
 const postsCollection = defineCollection({
-  loader: glob({ pattern: ['**/*.md', '**/*.mdx'], base: './src/content/posts' }),
+  loader: glob({
+    pattern: ['**/*.md', '**/*.mdx'],
+    base: './src/content/posts',
+    // English posts keep their usual id; a Turkish translation next to it
+    // (name.tr.md) gets the same id under "tr/" so the two never collide.
+    generateId: ({ entry, data }) => {
+      const id =
+        typeof data.slug === 'string' && data.slug
+          ? data.slug
+          : entry.replace(/\.(tr\.)?mdx?$/, '')
+      return /\.tr\.mdx?$/.test(entry) ? `tr/${id}` : id
+    },
+  }),
   schema: ({ image }) =>
     z.object({
       title: z.string(),
@@ -24,7 +36,12 @@ const postsCollection = defineCollection({
 })
 
 const homeCollection = defineCollection({
-  loader: glob({ pattern: ['home.md', 'home.mdx'], base: './src/content' }),
+  loader: glob({
+    pattern: ['home.md', 'home.mdx', 'home.tr.md', 'home.tr.mdx'],
+    base: './src/content',
+    // One entry per language, with the language as its id
+    generateId: ({ entry }) => (/\.tr\.mdx?$/.test(entry) ? 'tr' : 'en'),
+  }),
   schema: ({ image }) =>
     z.object({
       avatarImage: z
@@ -38,7 +55,12 @@ const homeCollection = defineCollection({
 })
 
 const addendumCollection = defineCollection({
-  loader: glob({ pattern: ['addendum.md', 'addendum.mdx'], base: './src/content' }),
+  loader: glob({
+    pattern: ['addendum.md', 'addendum.mdx', 'addendum.tr.md', 'addendum.tr.mdx'],
+    base: './src/content',
+    // One entry per language, with the language as its id
+    generateId: ({ entry }) => (/\.tr\.mdx?$/.test(entry) ? 'tr' : 'en'),
+  }),
   schema: ({ image }) =>
     z.object({
       avatarImage: z

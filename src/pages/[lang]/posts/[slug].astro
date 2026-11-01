@@ -1,0 +1,12 @@
+---
+// Turkish post page: renders the English page, which picks its language from the URL
+import type { GetStaticPaths } from 'astro'
+import Page from '../../posts/[slug].astro'
+import { postPaths } from '~/staticPaths'
+
+export const getStaticPaths = (async () => {
+  return postPaths('tr')
+}) satisfies GetStaticPaths
+---
+
+<Page {...Astro.props} />

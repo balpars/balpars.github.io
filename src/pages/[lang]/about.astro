@@ -1,0 +1,15 @@
+---
+// Turkish about page; the text lives in src/content/about.tr.md
+import type { GetStaticPaths } from 'astro'
+import MarkdownLayout from '~/layouts/MarkdownLayout.astro'
+import { Content, frontmatter } from '~/content/about.tr.md'
+import { langPaths } from '~/staticPaths'
+
+export const getStaticPaths = (async () => {
+  return langPaths('tr')
+}) satisfies GetStaticPaths
+---
+
+<MarkdownLayout frontmatter={frontmatter}>
+  <Content />
+</MarkdownLayout>

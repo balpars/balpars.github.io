@@ -1,0 +1,12 @@
+---
+// Turkish archive: renders the English page, which picks its language from the URL
+import type { GetStaticPaths } from 'astro'
+import Page from '../../posts/[...page].astro'
+import { archivePaths } from '~/staticPaths'
+
+export const getStaticPaths = (async ({ paginate }) => {
+  return archivePaths(paginate, 'tr')
+}) satisfies GetStaticPaths
+---
+
+<Page {...Astro.props} />

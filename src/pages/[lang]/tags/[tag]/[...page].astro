@@ -1,0 +1,12 @@
+---
+// Turkish tag pages: render the English page, which picks its language from the URL
+import type { GetStaticPaths } from 'astro'
+import Page from '../../../tags/[tag]/[...page].astro'
+import { tagPaths } from '~/staticPaths'
+
+export const getStaticPaths = (async ({ paginate }) => {
+  return tagPaths(paginate, 'tr')
+}) satisfies GetStaticPaths
+---
+
+<Page {...Astro.props} />

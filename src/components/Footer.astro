@@ -1,6 +1,9 @@
 ---
 import siteConfig from '~/site.config'
 import SocialLinks from '~/components/SocialLinks.astro'
+import { getLangFromUrl, t } from '~/i18n'
+
+const lang = getLangFromUrl(Astro.url)
 ---
 
 <footer
@@ -13,7 +16,7 @@ import SocialLinks from '~/components/SocialLinks.astro'
     </span>
     <span class="mx-5 hidden md:block"> :: </span>
     <span class="my-1">
-      Powered by <a
+      {t(lang, 'footer.poweredBy')} <a
         class="underline"
         target="_blank"
         rel="noopener noreferrer"

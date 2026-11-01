@@ -4,17 +4,36 @@ import LightDarkAutoButton from '~/components/LightDarkAutoButton.astro'
 import Search from '~/components/Search.astro'
 import SelectTheme from '~/components/SelectTheme.astro'
 import NavLink from '~/components/NavLink.astro'
+import LanguageSwitch from '~/components/LanguageSwitch.astro'
+import { getLangFromUrl, localizePath, t, type UiKey } from '~/i18n'
 
 const lightDarkAutoTheme = siteConfig.themes.mode === 'light-dark-auto'
 const selectTheme =
   siteConfig.themes.mode === 'select' && siteConfig.themes.include.length > 1
+
+const lang = getLangFromUrl(Astro.url)
+// Translated names for the built-in pages; other links keep their configured name
+const navNames: Record<string, UiKey> = {
+  '/': 'nav.home',
+  '/about': 'nav.about',
+  '/posts': 'nav.archive',
+}
+const navLinks = siteConfig.navLinks.map((link) =>
+  link.external
+    ? link
+    : {
+        ...link,
+        name: navNames[link.url] ? t(lang, navNames[link.url]) : link.name,
+        url: localizePath(link.url, lang),
+      },
+)
 ---
 
 <header>
   <div class="relative flex items-center justify-between bg-accent/10 rounded-xl">
     <a
       id="logo"
-      href="/"
+      href={localizePath('/', lang)}
       class="block px-4 py-1.5 max-w-full no-underline items-center bg-accent text-background font-bold rounded-xl"
     >
       {siteConfig.title}
@@ -23,6 +42,7 @@ const selectTheme =
       <Search trailingSlashes={siteConfig.trailingSlashes} />
       {lightDarkAutoTheme && <LightDarkAutoButton />}
       {selectTheme && <SelectTheme />}
+      <LanguageSwitch />
       <nav id="nav-mobile" aria-label="Menu" class="p-0 text-accent sm:hidden">
         <button
           id="nav-mobile-button"
@@ -38,7 +58,7 @@ const selectTheme =
           class="invisible absolute flex flex-col bg-background shadow text-accent border-2 m-0 p-2.5 top-11.5 left-auto right-0 z-50 rounded-xl"
         >
           {
-            siteConfig.navLinks.map((link) => (
+            navLinks.map((link) => (
               <li class="p-1" aria-expanded="false">
                 <NavLink link={link} />
               </li>
@@ -51,7 +71,7 @@ const selectTheme =
   <nav aria-label="Menu" class="p-0 mt-4 ml-0.5 text-accent hidden sm:block">
     <ul class="flex flex-row text-accent">
       {
-        siteConfig.navLinks.map((link) => (
+        navLinks.map((link) => (
           <li class="mr-5" aria-expanded="true">
             <NavLink link={link} />
           </li>

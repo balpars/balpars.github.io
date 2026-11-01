@@ -5,6 +5,7 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "astro dev",
+    "dev:drafts": "astro dev --mode drafts",
     "build": "astro build",
     "postbuild": "pagefind --site dist",
     "preview": "astro preview",

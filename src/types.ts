@@ -170,7 +170,8 @@ export interface SiteConfig {
   title: string
   description: string
   author: string
-  socialCardAvatarImage: string
+  // Optional square JPEG shown on social media preview cards.
+  socialCardAvatarImage?: string
   tags: string[]
   pageSize: number
   trailingSlashes: boolean

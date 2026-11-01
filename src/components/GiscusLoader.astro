@@ -1,5 +1,6 @@
 ---
 import siteConfig from '~/site.config'
+import { getLangFromUrl, unlocalizePath } from '~/i18n'
 // This will be localhost during development, site URL in prod
 const origin = Astro.url.origin
 const giscusConfig = siteConfig.giscus
@@ -11,6 +12,11 @@ const repoId = giscusConfig.repoId
 const category = giscusConfig.category
 const categoryId = giscusConfig.categoryId
 const reactionsEnabled = giscusConfig.reactionsEnabled ? '1' : '0'
+const lang = getLangFromUrl(Astro.url)
+// Both languages of a post share one discussion, keyed the way giscus's
+// "pathname" mapping keys the English page (e.g. "posts/x").
+const englishPath = unlocalizePath(Astro.url.pathname)
+const term = englishPath.length < 2 ? 'index' : englishPath.substring(1).replace(/\.\w+$/, '')
 ---
 
 <div
@@ -21,6 +27,8 @@ const reactionsEnabled = giscusConfig.reactionsEnabled ? '1' : '0'
   data-category={category}
   data-category-id={categoryId}
   data-reactions-enabled={reactionsEnabled}
+  data-term={term}
+  data-lang={lang}
 >
 </div>
 <script>
@@ -35,6 +43,8 @@ const reactionsEnabled = giscusConfig.reactionsEnabled ? '1' : '0'
     const category = giscusDiv.getAttribute('data-category')
     const categoryId = giscusDiv.getAttribute('data-category-id')
     const reactionsEnabled = giscusDiv.getAttribute('data-reactions-enabled')
+    const term = giscusDiv.getAttribute('data-term') || 'index'
+    const lang = giscusDiv.getAttribute('data-lang') || 'en'
     const theme = document.documentElement.getAttribute('data-theme')
     if (
       !origin ||
@@ -53,14 +63,15 @@ const reactionsEnabled = giscusConfig.reactionsEnabled ? '1' : '0'
     script.setAttribute('data-repo-id', repoId)
     script.setAttribute('data-category', category)
     script.setAttribute('data-category-id', categoryId)
-    script.setAttribute('data-mapping', 'pathname')
+    script.setAttribute('data-mapping', 'specific')
+    script.setAttribute('data-term', term)
     script.setAttribute('data-strict', '0')
     script.setAttribute('data-reactions-enabled', reactionsEnabled)
     script.setAttribute('data-emit-metadata', '0')
     // Setting this to 'bottom' doesn't work. Not sure why.
     script.setAttribute('data-input-position', 'top')
     script.setAttribute('data-theme', `${origin}/giscus/${theme}.css`)
-    script.setAttribute('data-lang', 'en')
+    script.setAttribute('data-lang', lang)
     script.setAttribute('loading', 'lazy')
     script.crossOrigin = 'anonymous'
     script.async = true

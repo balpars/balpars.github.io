@@ -1,0 +1,12 @@
+---
+// Turkish series pages: render the English page, which picks its language from the URL
+import type { GetStaticPaths } from 'astro'
+import Page from '../../series/[slug].astro'
+import { seriesPaths } from '~/staticPaths'
+
+export const getStaticPaths = (async () => {
+  return seriesPaths('tr')
+}) satisfies GetStaticPaths
+---
+
+<Page {...Astro.props} />

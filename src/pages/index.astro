@@ -7,24 +7,24 @@ import Pagination from '~/components/Pagination.astro'
 import BlockHeader from '~/components/BlockHeader.astro'
 import HomeBanner from '~/components/HomeBanner.astro'
 import siteConfig from '~/site.config'
-import TagsSection from '~/components/TagsSection.astro'
 import SeriesSection from '~/components/SeriesSection.astro'
+import { getLangFromUrl, localizePath, t } from '~/i18n'
 
+const lang = getLangFromUrl(Astro.url)
 const home = await getCollection('home')
 let HomeContent
 let homeAvatarImage
 let homeGithubCalendar
-if (home.length > 0) {
-  const homeEntry = home[0]
+// Prefer the home text in the page's language, falling back to English
+const homeEntry =
+  home.find((entry) => entry.id === lang) ?? home.find((entry) => entry.id === 'en')
+if (homeEntry) {
   const { Content } = await render(homeEntry)
   HomeContent = Content
   homeAvatarImage = homeEntry.data.avatarImage
   homeGithubCalendar = homeEntry.data.githubCalendar
 }
-const sortedPosts = await getSortedPosts()
-const postsHaveTags = sortedPosts.some(
-  (post) => post.data.tags && post.data.tags.length > 0,
-)
+const sortedPosts = await getSortedPosts(lang)
 
 const postsHaveSeries = sortedPosts.some((post) => post.data.series)
 ---
@@ -40,30 +40,22 @@ const postsHaveSeries = sortedPosts.some((post) => post.data.series)
   {
     sortedPosts.length > 0 && (
       <section>
-        <BlockHeader>Latest Posts</BlockHeader>
+        <BlockHeader>{t(lang, 'home.latestPosts')}</BlockHeader>
         {sortedPosts
           .reverse()
           .slice(0, Math.floor(siteConfig.pageSize / 2))
           .map((post) => (
             <PostPreview post={post} />
           ))}
-        <Pagination nextLink="/posts" nextText="Archive" />
+        <Pagination nextLink={localizePath('/posts', lang)} nextText={t(lang, 'nav.archive')} />
       </section>
     )
   }
   {
     postsHaveSeries && (
       <section>
-        <BlockHeader>Series</BlockHeader>
+        <BlockHeader>{t(lang, 'home.series')}</BlockHeader>
         <SeriesSection posts={sortedPosts} />
-      </section>
-    )
-  }
-  {
-    postsHaveTags && (
-      <section>
-        <BlockHeader>Tags</BlockHeader>
-        <TagsSection posts={sortedPosts} />
       </section>
     )
   }

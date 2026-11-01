@@ -1,9 +1,11 @@
 ---
+import { getLangFromUrl, t } from '~/i18n'
 import '@pagefind/default-ui/css/ui.css'
 import IconCircleX from '~/icons/circle-x.svg'
 import IconSearch from '~/icons/search.svg'
 
 const { trailingSlashes = false } = Astro.props
+const lang = getLangFromUrl(Astro.url)
 ---
 
 <site-search class="ms-auto" id="search" data-trailing-slashes={trailingSlashes}>
@@ -14,7 +16,7 @@ const { trailingSlashes = false } = Astro.props
     disabled
   >
     <IconSearch class="size-6 text-accent" />
-    <span class="sr-only">Open Search</span>
+    <span class="sr-only">{t(lang, 'header.search')}</span>
   </button>
   <dialog
     aria-label="search"

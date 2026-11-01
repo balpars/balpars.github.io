@@ -1,12 +1,14 @@
 ---
 import '~/styles/global.css'
 import Header from '~/components/Header.astro'
+import Terminal from '~/components/Terminal.astro'
 import Footer from '~/components/Footer.astro'
 import LightDarkAutoThemeLoader from '~/components/LightDarkAutoThemeLoader.astro'
 import SelectThemeLoader from '~/components/SelectThemeLoader.astro'
 import siteConfig from '~/site.config'
 import { pick, resolveThemeColorStyles } from '~/utils'
 import crypto from 'crypto'
+import { activeLangs, getLangFromUrl, localizePath, t, unlocalizePath } from '~/i18n'
 
 interface Props {
   title?: string
@@ -16,15 +18,22 @@ interface Props {
 }
 
 const { title, description, tags, author } = Astro.props
+const lang = getLangFromUrl(Astro.url)
+// The same page without the language prefix, e.g. "/tr/posts/x" -> "/posts/x"
+const basePath = unlocalizePath(Astro.url.pathname)
 const pageUrl = new URL(Astro.url.pathname, Astro.site).href.replace(/\/$/, '') // Remove trailing slash for consistency
-const pageType = Astro.url.pathname.startsWith('/posts') ? 'article' : 'website'
+const alternateUrls = activeLangs.map((code) => ({
+  lang: code,
+  href: new URL(localizePath(basePath, code), Astro.site).href.replace(/\/$/, ''),
+}))
+const pageType = basePath.startsWith('/posts') ? 'article' : 'website'
 const pageTitle = title ? `${title} - ${siteConfig.title}` : siteConfig.title
-const pageDescription = description || siteConfig.description
+const pageDescription = description || t(lang, 'site.description')
 const pageAuthor = author || siteConfig.author
 const pageImage =
   pageType === 'article'
     ? Astro.url.origin +
-      Astro.url.pathname.replace(/\/posts\//, '/social-cards/') +
+      basePath.replace(/\/posts\//, '/social-cards/') +
       '.png'
     : `${Astro.url.origin}/social-cards/__default.png`
 const pageKeywords = [
@@ -115,7 +124,7 @@ let generatedCss: string = cssLines.join('\n')
 
 <!doctype html>
 <html
-  lang="en"
+  lang={lang}
   data-theme={defaultTheme}
   data-dark-theme={darkTheme}
   data-light-theme={lightTheme}
@@ -140,6 +149,13 @@ let generatedCss: string = cssLines.join('\n')
     {pageImage && <meta name="twitter:image" content={pageImage} />}
     <meta name="keywords" content={pageKeywords} />
     <link rel="canonical" href={pageUrl} />
+    {
+      alternateUrls.length > 1 &&
+      alternateUrls.map((alternate) => (
+        <link rel="alternate" hreflang={alternate.lang} href={alternate.href} />
+      ))
+    }
+    <meta property="og:locale" content={lang === 'tr' ? 'tr_TR' : 'en_US'} />
     <link rel="sitemap" href="/sitemap-index.xml" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link
@@ -149,6 +165,14 @@ let generatedCss: string = cssLines.join('\n')
       href={new URL('rss.xml', Astro.site)}
     />
     <title>{pageTitle}</title>
+    <script is:inline>
+      // Hide the content until the terminal has "run" this page's command and prints it.
+      // Skipped for reduced motion; always undone after 5 seconds in case anything fails.
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.documentElement.classList.add('term-printing')
+        setTimeout(() => document.documentElement.classList.remove('term-printing'), 5000)
+      }
+    </script>
     <style is:global define:vars={baseCssVars}></style>
     <style is:inline set:html={generatedCss}></style>
     {themeMode === 'light-dark-auto' && <LightDarkAutoThemeLoader />}
@@ -159,6 +183,7 @@ let generatedCss: string = cssLines.join('\n')
       class="flex flex-col max-w-3xl min-h-screen border-accent/10 m-auto p-3 sm:py-5 sm:px-6 md:py-10"
     >
       <Header />
+      <Terminal />
       <main class="flex flex-col py-1">
         <slot />
       </main>

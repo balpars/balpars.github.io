@@ -5,28 +5,31 @@ import { render } from 'astro:content'
 import Tags from '~/components/Tags.astro'
 import PostInfo from '~/components/PostInfo.astro'
 import type { Collation } from '~/types'
-import { TagsGroup } from '~/utils'
+import { TagsGroup, postUrl } from '~/utils'
+import { getLangFromUrl, t } from '~/i18n'
 
 interface Props {
   post: CollectionEntry<'posts'>
 }
 
 const { post } = Astro.props
+const lang = getLangFromUrl(Astro.url)
 
 const { remarkPluginFrontmatter } = await render(post)
 const description = remarkPluginFrontmatter.description || post.data.description
 let tags: Collation<'posts'>[] | undefined
 if (post.data.tags && post.data.tags.length > 0) {
-  const tagsGroup = await TagsGroup.build()
+  const tagsGroup = await TagsGroup.build(undefined, lang)
   tags = tagsGroup.matchMany(post.data.tags)
 }
-const samePage = Astro.url.pathname === `/posts/${post.id}`
-const articleLink = samePage ? `#${post.id}` : `/posts/${post.id}`
+const postLink = postUrl(post, lang)
+const samePage = Astro.url.pathname === postLink
+const articleLink = samePage ? `#${post.id}` : postLink
 ---
 
 <article class="w-full py-5 my-1 md:my-4 border-accent/10">
   <h1 class="mb-3 text-2xl text-heading1 font-semibold">
-    <a href={articleLink}># {post.data.title}</a>
+    <a href={articleLink}><span class="text-accent/80" aria-hidden="true"># </span>{post.data.title}</a>
   </h1>
   <PostInfo post={post} class="mb-3 mt-4" />
   {description && <p class="pl-0.5 my-4 text-base/7 text-foreground">{description}</p>}
@@ -39,7 +42,7 @@ const articleLink = samePage ? `#${post.id}` : `/posts/${post.id}`
   }
   <div>
     <a class="button flex items-center !pl-3.5" href={articleLink}>
-      {samePage ? 'Continue' : 'Read'}
+      {samePage ? t(lang, 'post.continue') : t(lang, 'post.read')}
       <IconChevronsRight class="size-5 ml-2" />
     </a>
   </div>

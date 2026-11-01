@@ -1,0 +1,35 @@
+---
+import { activeLangs, getLangFromUrl, languages, localizePath, t } from '~/i18n'
+
+// Links to the current page in each live language; the active one is highlighted.
+// Hidden while only one language is live (see activeLangs in src/i18n.ts).
+const lang = getLangFromUrl(Astro.url)
+---
+
+{
+  activeLangs.length > 1 && (
+    <nav aria-label={t(lang, 'header.language')} class="flex items-center text-sm font-semibold">
+      {activeLangs.map((code, index) => (
+        <>
+          {index > 0 && (
+            <span class="px-1 text-accent/40" aria-hidden="true">
+              |
+            </span>
+          )}
+          <a
+            href={localizePath(Astro.url.pathname, code)}
+            hreflang={code}
+            lang={code}
+            aria-current={code === lang ? 'true' : undefined}
+            class:list={[
+              'px-0.5 no-underline transition-colors',
+              code === lang ? 'text-accent' : 'text-foreground/50 hover:text-accent',
+            ]}
+          >
+            {languages[code]}
+          </a>
+        </>
+      ))}
+    </nav>
+  )
+}

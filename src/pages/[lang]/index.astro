@@ -1,0 +1,12 @@
+---
+// Turkish home page: renders the English page, which picks its language from the URL
+import type { GetStaticPaths } from 'astro'
+import Page from '../index.astro'
+import { langPaths } from '~/staticPaths'
+
+export const getStaticPaths = (async () => {
+  return langPaths('tr')
+}) satisfies GetStaticPaths
+---
+
+<Page />

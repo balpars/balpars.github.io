@@ -1,11 +1,13 @@
 ---
 import type { Collation } from '~/types'
+import { getLangFromUrl, tagLabel } from '~/i18n'
 
 interface Props {
   tags: Collation<'posts'>[]
 }
 
 const { tags } = Astro.props
+const lang = getLangFromUrl(Astro.url)
 ---
 
 <div class="flex flex-wrap gap-3 text-sm">
@@ -15,7 +17,7 @@ const { tags } = Astro.props
         href={tag.url}
         class="py-1 px-3 bg-accent/1 hover:bg-accent/8 border-1 border-accent/20 text-accent/90 rounded-2xl transition-colors"
       >
-        {tag.title}
+        {tagLabel(tag.title, lang)}
       </a>
     ))
   }

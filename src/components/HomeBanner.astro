@@ -10,9 +10,10 @@ interface Props {
 const { avatarImage, githubCalendar } = Astro.props
 ---
 
-<div class="my-6 md:mx-2">
+<!-- Same top margin as BlockHeader, so the space above and below this text matches -->
+<div class="mt-4 md:mt-7 md:mx-2">
   <div
-    class="flex flex-col sm:flex-row items-center justify-around sm:gap-5 max-w-full mb-6"
+    class="flex flex-col sm:flex-row items-center justify-around sm:gap-5 max-w-full"
   >
     {
       avatarImage && (

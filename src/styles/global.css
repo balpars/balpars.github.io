@@ -2,6 +2,20 @@
 @import 'katex/dist/katex.css';
 
 /* https://fontsource.org/fonts/jetbrains-mono/install */
+/* jetbrains-mono-latin-ext-wght-normal: Turkish ı İ ş Ş ğ Ğ and other extended Latin letters */
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url(@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-ext-wght-normal.woff2)
+    format('woff2-variations');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0,
+    U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 /* jetbrains-mono-latin-wght-normal */
 @font-face {
   font-family: 'JetBrains Mono Variable';
@@ -609,4 +623,10 @@ article img {
   input[type='submit'] {
     @apply border-accent cursor-pointer;
   }
+}
+
+/* Section dividers: a single thin, muted gold line. */
+.wb-rule {
+  height: 1px;
+  background: color-mix(in srgb, var(--theme-accent) 35%, transparent);
 }

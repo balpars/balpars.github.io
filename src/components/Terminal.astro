@@ -1,0 +1,1549 @@
+---
+// One terminal for the whole site, under the menu on every page.
+// - Every page "runs" its command here before its content is printed
+//   (cd ~/posts, cat post.md, ...), and the history carries over between pages.
+// - Clicking a link types the matching command before navigating.
+// - Readers can type too. It is a deliberately tiny shell over a fixed, fake file
+//   system (posts, tags, series, about.md); cd/cat to a page behaves exactly
+//   like clicking its link. Nothing typed here runs anywhere.
+// - Easter egg: 2 minutes on a page runs ./mine_bitcoin.sh (only prints text).
+//   The castle (./castle_age.sh) shows up when someone "attacks" the shell.
+import siteConfig from '~/site.config'
+import { getLangFromUrl, localizePath } from '~/i18n'
+import { SeriesGroup, TagsGroup, dateString, getSortedPosts, postSlug } from '~/utils'
+
+const lang = getLangFromUrl(Astro.url)
+const posts = await getSortedPosts(lang)
+const tags = await TagsGroup.build(posts, lang)
+const series = await SeriesGroup.build(posts, lang)
+
+// The fake file system the shell works on, embedded as JSON for the script
+const fs = {
+  langPrefix: localizePath('/', lang).replace(/\/$/, ''),
+  posts: [...posts].reverse().map((post) => ({
+    slug: postSlug(post),
+    title: post.data.title,
+    date: dateString(post.data.published),
+    // Byte size of the markdown source, shown by `ls -l`
+    size: new TextEncoder().encode(post.body ?? '').length,
+  })),
+  tags: tags.collations.map((tag) => ({
+    slug: tag.titleSlug,
+    posts: tag.entries.map(postSlug),
+  })),
+  series: series.collations.map((item) => ({
+    slug: item.titleSlug,
+    posts: item.entries.map(postSlug),
+  })),
+  themes: siteConfig.themes.mode === 'select' ? siteConfig.themes.include : [],
+  castle: [
+    '    |>>           |>>',
+    '    |             |',
+    '   /^\\           /^\\',
+    '  /___\\         /___\\',
+    '  |   |_^_^_^_^_|   |',
+    '  | o |         | o |',
+    '  |   |   ___   |   |',
+    '  |   |  |   |  |   |',
+    '__|___|__|   |__|___|__',
+  ],
+}
+// Keep "</script>" in a title from ending the JSON block early
+const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
+---
+
+<div class="terminal" data-terminal>
+  <div class="terminal-bar" aria-hidden="true">
+    <span></span><span></span><span></span>
+    <em class="terminal-title">balpars@journey: ~</em>
+  </div>
+  <div class="terminal-screen" role="log" aria-label="Terminal"></div>
+  <script is:inline type="application/json" data-terminal-fs set:html={fsJson} />
+</div>
+
+<script>
+  type Line = { kind: 'cmd'; cwd: string; text: string } | { kind: 'out'; html: string; cls?: string }
+  type Step = { text: string; cwd?: string }
+  type Session = {
+    lines: Line[]
+    cwd: string
+    pending?: string
+    homeDone?: boolean
+    bitcoinShown?: boolean
+    typedHistory?: string[]
+  }
+  type Fs = {
+    langPrefix: string
+    posts: { slug: string; title: string; date: string; size: number }[]
+    tags: { slug: string; posts: string[] }[]
+    series: { slug: string; posts: string[] }[]
+    themes: string[]
+    castle: string[]
+  }
+
+  const STORAGE_KEY = 'terminal-session'
+  const MAX_LINES = 80
+  const BITCOIN_DELAY = 120_000
+
+  const terminal = document.querySelector<HTMLElement>('[data-terminal]')
+  const screen = terminal?.querySelector<HTMLElement>('.terminal-screen')
+  const title = terminal?.querySelector<HTMLElement>('.terminal-title')
+  const fs: Fs = JSON.parse(terminal?.querySelector('[data-terminal-fs]')?.textContent || 'null')
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, reduced ? 0 : ms))
+  const between = (min: number, max: number) => min + Math.random() * (max - min)
+  const escapeHtml = (text: string) =>
+    text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
+
+  function loadSession(): Session {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null')
+      if (saved && Array.isArray(saved.lines)) return saved
+    } catch {}
+    return { lines: [], cwd: '~' }
+  }
+
+  const session = loadSession()
+  let busy = false
+  let refocus = false
+  // Keys typed after clicking the terminal but before the prompt is back
+  let pendingKeys = ''
+  let quietThemeChange = false
+
+  function saveSession() {
+    session.lines = session.lines.slice(-MAX_LINES)
+    session.typedHistory = (session.typedHistory || []).slice(-50)
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session))
+    } catch {}
+  }
+
+  // ---------------------------------------------------------------- the fake file system
+
+  const scripts = ['castle_age.sh', 'mine_bitcoin.sh']
+
+  // "~/tags/../posts" -> "~/posts". "/" is treated as home, there is nothing above it.
+  function resolvePath(arg: string, cwd: string): string {
+    const parts = arg.startsWith('~')
+      ? arg.slice(1).split('/')
+      : arg.startsWith('/')
+        ? arg.split('/')
+        : [...cwd.slice(1).split('/'), ...arg.split('/')]
+    const stack: string[] = []
+    for (const part of parts) {
+      if (!part || part === '.') continue
+      if (part === '..') stack.pop()
+      else stack.push(part)
+    }
+    return '~' + (stack.length ? '/' + stack.join('/') : '')
+  }
+
+  // Directory listing, or null when the directory doesn't exist.
+  // `hidden` files only show up with `ls -a`.
+  function listDir(dir: string): { dirs: string[]; files: string[]; hidden?: string[] } | null {
+    const postFiles = (slugs: string[]) => slugs.map((slug) => `${slug}.md`)
+    if (dir === '~') {
+      return {
+        dirs: ['posts', 'tags', 'series'],
+        files: ['about.md', 'journey.log', ...scripts],
+        hidden: Object.keys(dotfiles),
+      }
+    }
+    if (/^~\/posts(\/\d+)?$/.test(dir)) return { dirs: [], files: postFiles(fs.posts.map((p) => p.slug)) }
+    if (dir === '~/tags') return { dirs: fs.tags.map((t) => t.slug), files: [] }
+    if (dir === '~/series') return { dirs: fs.series.map((s) => s.slug), files: [] }
+    const tag = dir.match(/^~\/tags\/([^/]+)(\/\d+)?$/)
+    const found = tag && fs.tags.find((t) => t.slug === tag[1])
+    if (found) return { dirs: [], files: postFiles(found.posts) }
+    const item = dir.match(/^~\/series\/([^/]+)$/)
+    const seriesFound = item && fs.series.find((s) => s.slug === item[1])
+    if (seriesFound) return { dirs: [], files: postFiles(seriesFound.posts) }
+    return null
+  }
+
+  // The page a directory stands for, if it has one
+  function dirPage(dir: string): string | null {
+    if (dir === '~') return '/'
+    if (dir === '~/posts') return '/posts'
+    if (/^~\/posts\/\d+$/.test(dir)) return dir.slice(1)
+    if (/^~\/(tags|series)\/[^/]+(\/\d+)?$/.test(dir) && listDir(dir)) return dir.slice(1)
+    return null
+  }
+
+  function splitPath(path: string) {
+    const index = path.lastIndexOf('/')
+    return { dir: path.slice(0, index), name: path.slice(index + 1) }
+  }
+
+  // ---------------------------------------------------------------- screen
+
+  // The commands a page "runs", based on its path (Turkish pages use the same paths)
+  function stepsFor(pathname: string, cwd: string): Step[] {
+    const path = pathname.replace(/^\/tr(?=\/|$)/, '').replace(/\/$/, '') || '/'
+    const cd = (dir: string): Step[] => (cwd === dir ? [] : [{ text: `cd ${dir}`, cwd: dir }])
+    let match
+    if (document.querySelector('[data-not-found]') && pathname === location.pathname) {
+      return [{ text: `cd ~${path}` }]
+    }
+    if (path === '/') return cd('~')
+    if (path === '/about') return [{ text: cwd === '~' ? 'cat about.md' : 'cat ~/about.md' }]
+    if (path === '/posts') return cd('~/posts')
+    if ((match = path.match(/^\/posts\/(\d+)$/))) return cd(`~/posts/${match[1]}`)
+    if ((match = path.match(/^\/posts\/([^/]+)$/))) return [...cd('~/posts'), { text: `cat ${match[1]}.md` }]
+    if ((match = path.match(/^\/tags\/([^/]+)(?:\/(\d+))?$/))) return cd(`~/tags/${match[1]}${match[2] ? '/' + match[2] : ''}`)
+    if ((match = path.match(/^\/series\/([^/]+)$/))) return cd(`~/series/${match[1]}`)
+    return cd(`~${path}`)
+  }
+
+  function lineElement(line: Line) {
+    const p = document.createElement('p')
+    p.innerHTML =
+      line.kind === 'cmd'
+        ? `<span class="prompt">${escapeHtml(line.cwd)} $</span> ${escapeHtml(line.text)}`
+        : line.html
+    if (line.kind === 'out') p.className = ['output', line.cls].filter(Boolean).join(' ')
+    return p
+  }
+
+  function scrollToEnd() {
+    if (screen) screen.scrollTop = screen.scrollHeight
+  }
+
+  function setTitle() {
+    if (title) title.textContent = `balpars@journey: ${session.cwd}`
+  }
+
+  function print(html: string, cls?: string) {
+    const line: Line = { kind: 'out', html, cls }
+    session.lines.push(line)
+    screen?.append(lineElement(line))
+    scrollToEnd()
+  }
+
+  function printError(text: string) {
+    print(`<span class="error">${escapeHtml(text)}</span>`)
+  }
+
+  function addCommandLine(text: string) {
+    const line: Line = { kind: 'cmd', cwd: session.cwd, text }
+    session.lines.push(line)
+    screen?.append(lineElement(line))
+    scrollToEnd()
+  }
+
+  const postLink = (slug: string, label: string) =>
+    `<a href="${fs.langPrefix}/posts/${encodeURIComponent(slug)}" tabindex="-1">${escapeHtml(label)}</a>`
+
+  // ---------------------------------------------------------------- prompt and input
+
+  let historyIndex = 0
+
+  function showIdlePrompt() {
+    removeIdlePrompt()
+    const p = document.createElement('p')
+    p.className = 'idle'
+    // The real input is invisible; the typed text is mirrored in front of a block
+    // cursor, so it looks like a terminal whether or not the input has focus
+    p.innerHTML =
+      `<span class="prompt">${escapeHtml(session.cwd)} $</span>` +
+      `<span class="line-input"><span class="mirror"></span><span class="cursor" aria-hidden="true">▌</span>` +
+      `<input class="term-input" aria-label="Terminal command, type help" spellcheck="false" autocomplete="off" autocapitalize="off" /></span>`
+    screen?.append(p)
+    const input = p.querySelector('input')!
+    input.addEventListener('keydown', onKeyDown)
+    input.addEventListener('input', () => syncMirror(input))
+    historyIndex = (session.typedHistory || []).length
+    if (refocus) {
+      input.focus({ preventScroll: true })
+      input.value = pendingKeys
+      syncMirror(input)
+    }
+    refocus = false
+    pendingKeys = ''
+    scrollToEnd()
+  }
+
+  function removeIdlePrompt() {
+    screen?.querySelector('.idle')?.remove()
+  }
+
+  function currentInput() {
+    return screen?.querySelector<HTMLInputElement>('.term-input') || null
+  }
+
+  function syncMirror(input: HTMLInputElement) {
+    const mirror = input.parentElement?.querySelector('.mirror')
+    if (mirror) mirror.textContent = input.value
+    scrollToEnd()
+  }
+
+  function onKeyDown(event: KeyboardEvent) {
+    const input = event.target as HTMLInputElement
+    const history = session.typedHistory || []
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      execute(input.value)
+    } else if (event.key === 'Tab') {
+      event.preventDefault()
+      complete(input)
+    } else if (event.key === 'ArrowUp' && history.length) {
+      event.preventDefault()
+      historyIndex = Math.max(0, historyIndex - 1)
+      input.value = history[historyIndex] || ''
+    } else if (event.key === 'ArrowDown' && history.length) {
+      event.preventDefault()
+      historyIndex = Math.min(history.length, historyIndex + 1)
+      input.value = history[historyIndex] || ''
+    } else if (event.key === 'Escape') {
+      input.blur()
+    } else if (event.key === 'l' && event.ctrlKey) {
+      event.preventDefault()
+      clearScreen()
+      refocus = true
+      showIdlePrompt()
+    } else if (event.key === 'c' && event.ctrlKey && input.selectionStart === input.selectionEnd) {
+      event.preventDefault()
+      addCommandLine(input.value + '^C')
+      refocus = true
+      showIdlePrompt()
+    }
+    syncMirror(input)
+  }
+
+  // Tab completion over commands and the fake file system
+  function complete(input: HTMLInputElement) {
+    const value = input.value
+    const lastSpace = value.lastIndexOf(' ')
+    let candidates: string[]
+    let prefix: string
+    if (lastSpace === -1) {
+      prefix = value
+      const local = session.cwd === '~' ? scripts.map((s) => `./${s}`) : []
+      candidates = [...Object.keys(commands), ...Object.keys(aliases), ...local].filter((c) =>
+        c.startsWith(prefix),
+      )
+    } else {
+      prefix = value.slice(lastSpace + 1)
+      const slash = prefix.lastIndexOf('/')
+      const dirPart = slash === -1 ? '' : prefix.slice(0, slash + 1)
+      const listing = listDir(dirPart ? resolvePath(dirPart, session.cwd) : session.cwd)
+      const namePart = prefix.slice(dirPart.length)
+      const hidden = namePart.startsWith('.') ? listing?.hidden || [] : []
+      const entries = listing ? [...listing.dirs.map((d) => d + '/'), ...listing.files, ...hidden] : []
+      candidates = entries.filter((e) => e.startsWith(namePart)).map((e) => dirPart + e)
+    }
+    if (!candidates.length) return
+    let common = candidates[0]
+    for (const candidate of candidates) {
+      while (!candidate.startsWith(common)) common = common.slice(0, -1)
+    }
+    if (candidates.length === 1 && !common.endsWith('/')) common += ' '
+    if (common.length > prefix.length) {
+      input.value = value.slice(0, value.length - prefix.length) + common
+      syncMirror(input)
+    } else if (candidates.length > 1) {
+      // Second Tab in a real shell: show the options
+      addCommandLine(value)
+      print(escapeHtml(candidates.map((c) => c.slice(c.lastIndexOf('/', c.length - 2) + 1)).join('  ')))
+      refocus = true
+      showIdlePrompt()
+      const fresh = currentInput()
+      if (fresh) {
+        fresh.value = value
+        syncMirror(fresh)
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- commands
+
+  type Result = 'done' | 'navigating'
+
+  // Leaves for another page the same way a click does: the command is already typed
+  function goTo(path: string): Result {
+    const target = fs.langPrefix + (path === '/' && fs.langPrefix ? '' : path)
+    if (target === location.pathname) return 'done'
+    session.pending = target
+    saveSession()
+    window.location.href = target
+    return 'navigating'
+  }
+
+  type Entry = { name: string; kind: 'dir' | 'file' }
+
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const postDate = (slug: string) => fs.posts.find((p) => p.slug === slug)?.date || ''
+  const newestDate = (slugs?: string[]) =>
+    (slugs ? slugs.map(postDate) : fs.posts.map((p) => p.date)).sort().pop() || '1970-01-01'
+  const oldestDate = () => fs.posts.map((p) => p.date).sort()[0] || '1970-01-01'
+
+  // "2026-11-01" -> "Nov  1  2026", the way ls shows older files
+  function lsDate(iso: string) {
+    const [year, month, day] = iso.split('-').map(Number)
+    return `${MONTHS[month - 1]} ${String(day).padStart(2)}  ${year}`
+  }
+
+  // 4096 -> "4.0K", 12800 -> "13K", like ls -h
+  function humanSize(bytes: number) {
+    if (bytes < 1024) return String(bytes)
+    let value = bytes / 1024
+    let unit = 0
+    while (value >= 1024 && unit < 2) {
+      value /= 1024
+      unit++
+    }
+    return (value < 10 ? value.toFixed(1) : String(Math.round(value))) + ['K', 'M', 'G'][unit]
+  }
+
+  // What ls -l reports for an entry of the fake file system
+  function stat(dir: string, entry: Entry) {
+    const path = entry.name === '.' ? dir : entry.name === '..' ? splitPath(dir).dir || '~' : `${dir}/${entry.name}`
+    if (entry.kind === 'dir') {
+      const subdirs = entry.name === '..' && dir === '~' ? 1 : listDir(path)?.dirs.length || 0
+      const tag = path.match(/^~\/tags\/([^/]+)/)
+      const item = path.match(/^~\/series\/([^/]+)/)
+      const slugs = tag
+        ? fs.tags.find((t) => t.slug === tag[1])?.posts
+        : item
+          ? fs.series.find((s) => s.slug === item[1])?.posts
+          : undefined
+      const isRoot = entry.name === '..' && dir === '~'
+      return {
+        mode: 'drwxr-xr-x',
+        links: 2 + subdirs,
+        owner: isRoot ? 'root' : 'balpars',
+        size: 4096,
+        date: newestDate(slugs),
+      }
+    }
+    const name = entry.name
+    const file = (mode: string, size: number, date: string) => ({ mode, links: 1, owner: 'balpars', size, date })
+    const post = fs.posts.find((p) => `${p.slug}.md` === name)
+    if (post) return file('-rw-r--r--', post.size, post.date)
+    if (name === 'about.md') return file('-rw-r--r--', 1337, newestDate())
+    if (name === 'journey.log') {
+      const log = fs.posts.slice(0, 5).map((p) => `[${p.date}] ${p.title}\n`).join('')
+      return file('-rw-r--r--', new TextEncoder().encode(log).length, newestDate())
+    }
+    if (fakeScripts[name]) return file('-rwxr-xr-x', fakeScripts[name].join('\n').length + 1, '2024-04-01')
+    if (dotfiles[name]) {
+      const mode = name === '.bash_history' ? '-rw-------' : '-rw-r--r--'
+      return file(mode, dotfiles[name].join('\n').length + 1, oldestDate())
+    }
+    return file('-rw-r--r--', 0, newestDate())
+  }
+
+  function entryLabel(dir: string, entry: Entry, trailingSlash: boolean) {
+    const name = escapeHtml(entry.name)
+    if (entry.kind === 'dir') {
+      if (entry.name === '.' || entry.name === '..') return `<span class="dir">${name}</span>`
+      const page = dirPage(`${dir}/${entry.name}`)
+      const label = name + (trailingSlash ? '/' : '')
+      return `<span class="dir">${page ? `<a href="${fs.langPrefix}${page}" tabindex="-1">${label}</a>` : label}</span>`
+    }
+    return entry.name.endsWith('.md') && entry.name !== 'about.md' ? postLink(entry.name.slice(0, -3), entry.name) : name
+  }
+
+  // ls, ls -a, ls -l, ls -lah, ... over the fake file system
+  function listing(dir: string, flags: Set<string> = new Set()) {
+    const content = listDir(dir)!
+    const all = flags.has('a')
+    const entries: Entry[] = [
+      ...(all ? (['.', '..'].map((name) => ({ name, kind: 'dir' })) as Entry[]) : []),
+      ...(all ? (content.hidden || []).map((name): Entry => ({ name, kind: 'file' })) : []),
+      ...content.dirs.map((name): Entry => ({ name, kind: 'dir' })),
+      ...content.files.map((name): Entry => ({ name, kind: 'file' })),
+    ]
+    if (!entries.length) return
+
+    if (!flags.has('l')) {
+      const items = entries.map((entry) => entryLabel(dir, entry, true))
+      // Long names one per line, short ones side by side
+      if (entries.some((entry) => entry.name.length > 22)) items.forEach((item) => print(item))
+      else print(items.join('  '))
+      return
+    }
+
+    const human = flags.has('h')
+    const rows = entries.map((entry) => ({ entry, ...stat(dir, entry) }))
+    const sizeText = (bytes: number) => (human ? humanSize(bytes) : String(bytes))
+    const linkWidth = Math.max(...rows.map((row) => String(row.links).length))
+    const ownerWidth = Math.max(...rows.map((row) => row.owner.length))
+    const sizeWidth = Math.max(...rows.map((row) => sizeText(row.size).length))
+    // Disk usage in 1K blocks, rounded up to 4K blocks like most file systems
+    const blocks = rows.reduce((sum, row) => sum + Math.ceil(row.size / 4096) * 4, 0)
+    print(`total ${human ? humanSize(blocks * 1024) : blocks}`, 'pre')
+    for (const row of rows) {
+      const meta = [
+        row.mode,
+        String(row.links).padStart(linkWidth),
+        row.owner.padEnd(ownerWidth),
+        row.owner.padEnd(ownerWidth),
+        sizeText(row.size).padStart(sizeWidth),
+        lsDate(row.date),
+      ].join(' ')
+      print(`${escapeHtml(meta)} ${entryLabel(dir, row.entry, false)}`, 'pre')
+    }
+  }
+
+  function journeyLog() {
+    for (const post of fs.posts.slice(0, 5)) {
+      print(`<span class="log-date">[${post.date}]</span> ${postLink(post.slug, post.title)}`)
+    }
+  }
+
+  async function castleAge() {
+    for (const row of fs.castle) {
+      print(escapeHtml(row), 'castle')
+      await wait(between(25, 50))
+    }
+  }
+
+  async function mineBitcoin() {
+    const output = [
+      '[*] connecting to pool.balpars.local:3333 ... ok',
+      '[*] warming up the CPU fan',
+      '[*] hashrate: 0.0000042 H/s',
+      '[!] estimated time to 1 BTC: 4.2 billion years',
+      '[!] aborting. maybe read another post instead?',
+    ]
+    for (const line of output) {
+      print(escapeHtml(line))
+      await wait(between(450, 900))
+    }
+  }
+
+  // Running ./castle_age.sh, ~/mine_bitcoin.sh, sh castle_age.sh, ...
+  async function runScript(path: string): Promise<boolean> {
+    const resolved = resolvePath(path, session.cwd)
+    if (resolved === '~/castle_age.sh') await castleAge()
+    else if (resolved === '~/mine_bitcoin.sh') await mineBitcoin()
+    else return false
+    return true
+  }
+
+  // What `cat` shows for the two scripts: plausible bash, entirely made up.
+  // None of it runs; the "scripts" only ever print text.
+  const fakeScripts: Record<string, string[]> = {
+    'castle_age.sh': [
+      '#!/usr/bin/env bash',
+      '# castle_age.sh: advance to the Castle Age. defends the blog when attacked.',
+      'set -euo pipefail',
+      '',
+      'FOOD=$(cat /var/lib/villagers/food 2>/dev/null || echo 0)',
+      'GOLD=$(cat /var/lib/villagers/gold 2>/dev/null || echo 0)',
+      '',
+      'if (( FOOD < 800 || GOLD < 200 )); then',
+      '  echo "not enough resources. read another post and try again." >&2',
+      '  exit 1',
+      'fi',
+      '',
+      'for wall in north east south west; do',
+      '  build_wall "$wall" --material=stone --thickness=excessive',
+      'done',
+      '',
+      '# the only intrusion detection system this blog has',
+      'trap \'deploy_guards --count=4 --formation=line\' PATH_TRAVERSAL',
+      '',
+      'echo "castle age reached. wololo."',
+    ],
+    'mine_bitcoin.sh': [
+      '#!/usr/bin/env bash',
+      '# mine_bitcoin.sh: get rich while reading a blog. (you will not.)',
+      'set -euo pipefail',
+      '',
+      'POOL="stratum+tcp://pool.balpars.local:3333"',
+      'WALLET="bc1q-this-is-not-a-wallet-it-is-a-joke"',
+      'THREADS=1          # be gentle with the reader\'s laptop',
+      '',
+      'connect "$POOL" --wallet "$WALLET" || true   # it never connects',
+      '',
+      'while true; do',
+      '  nonce=$RANDOM',
+      '  hash=$(echo "$nonce" | sha256sum | cut -c1-8)',
+      '  [[ "$hash" == "00000000" ]] && break        # see you in 4.2 billion years',
+      '  sleep 600                                  # about one block time',
+      'done',
+      '',
+      'echo "mined 0.00000000 BTC. electricity bill: yours."',
+    ],
+  }
+
+  // Aliases from ~/.bashrc; they work as commands too
+  const aliases: Record<string, string> = {
+    ll: 'ls -lah',
+    please: 'sudo',
+    hack: 'cat about.md',
+  }
+  const aliasComments: Record<string, string> = {
+    please: "# still won't work",
+  }
+  const aliasLines = () =>
+    Object.entries(aliases).map(([name, value]) => `alias ${name}='${value}'`)
+
+  // Hidden files in ~, shown by `ls -a` and readable with cat. Also made up.
+  const dotfiles: Record<string, string[]> = {
+    '.bashrc': [
+      '# ~/.bashrc: read by balpars-sh for every curious reader',
+      "export PS1='\\w $ '",
+      'export EDITOR=cat          # the blog is read-only anyway',
+      '',
+      ...aliasLines().map((line) => {
+        const comment = aliasComments[line.slice(6, line.indexOf('='))]
+        return comment ? `${line.padEnd(27)}${comment}` : line
+      }),
+      '',
+      '# note to self: write more posts',
+    ],
+    '.bash_history': [
+      'cd ~/posts',
+      'vim one-model-two-machines.md',
+      'git commit -m "typo"',
+      'git commit -m "typo again"',
+      'git commit -m "published"',
+      'sudo apt install motivation',
+      'cat /etc/passwd   # testing the castle guard',
+      'history -c        # forgot to run this',
+    ],
+  }
+
+  function printScript(lines: string[]) {
+    for (const line of lines) {
+      const html = escapeHtml(line) || '&nbsp;'
+      print(/^\s*#/.test(line) ? `<span class="comment">${html}</span>` : html, 'pre')
+    }
+  }
+
+  const help = [
+    'balpars-sh 0.1: just a normal shell.',
+    '',
+    '  ls [dir]       look around',
+    '  cd <dir>       go somewhere (posts, tags, series)',
+    '  cat <file>     read something (posts open as pages)',
+    '  pwd            where am I?',
+    '  theme [name]   show or change the colors (theme list)',
+    '  clear          wipe the slate',
+    '  whoami         an existential question',
+    '  help           this message',
+    '',
+    "psst. there's more here than help admits. try ls -a, or just wait.",
+  ]
+
+  const commands: Record<string, (args: string[]) => Promise<Result> | Result> = {
+    help() {
+      help.forEach((line) => print(escapeHtml(line) || '&nbsp;', 'pre'))
+      return 'done'
+    },
+    async ls(args) {
+      const flags = new Set<string>()
+      const paths: string[] = []
+      for (const arg of args) {
+        if (arg === '--all') flags.add('a')
+        else if (arg.startsWith('-') && arg.length > 1) {
+          for (const flag of arg.slice(1)) {
+            if (!'lah'.includes(flag)) {
+              printError(`ls: invalid option -- '${flag}'`)
+              print("this ls only knows -l, -a and -h. try 'ls -lah'.")
+              return 'done'
+            }
+            flags.add(flag)
+          }
+        } else paths.push(arg)
+      }
+      const target = paths[0]
+      const poke = target ? pokedOutside('ls', target) : null
+      if (poke === 'attack') await guardResponds()
+      if (poke) return 'done'
+      const dir = resolvePath(target || '.', session.cwd)
+      if (listDir(dir)) listing(dir, flags)
+      else {
+        const { dir: parent, name } = splitPath(dir)
+        const parentContent = listDir(parent)
+        // ls on a single file just names it
+        if (parentContent?.files.includes(name) || parentContent?.hidden?.includes(name)) print(escapeHtml(target!))
+        else printError(`ls: cannot access '${target}': No such file or directory`)
+      }
+      return 'done'
+    },
+    async cd(args) {
+      const poke = args[0] ? pokedOutside('cd', args[0]) : null
+      if (poke === 'attack') await guardResponds()
+      if (poke) return 'done'
+      const dir = resolvePath(args[0] || '~', session.cwd)
+      if (!listDir(dir)) {
+        const { dir: parent, name } = splitPath(dir)
+        const isFile = listDir(parent)?.files.includes(name)
+        printError(`cd: ${args[0]}: ${isFile ? 'Not a directory' : 'No such file or directory'}`)
+        return 'done'
+      }
+      session.cwd = dir
+      setTitle()
+      const page = dirPage(dir)
+      return page ? goTo(page) : 'done'
+    },
+    async cat(args) {
+      if (!args[0]) {
+        printError('cat: missing file (try ls)')
+        return 'done'
+      }
+      const poke = pokedOutside('cat', args[0])
+      if (poke === 'attack') await guardResponds()
+      if (poke) return 'done'
+      const path = resolvePath(args[0], session.cwd)
+      if (listDir(path)) {
+        printError(`cat: ${args[0]}: Is a directory`)
+        return 'done'
+      }
+      const { dir, name } = splitPath(path)
+      const content = listDir(dir)
+      if (!content?.files.includes(name) && !content?.hidden?.includes(name)) {
+        printError(`cat: ${args[0]}: No such file or directory`)
+        return 'done'
+      }
+      if (path === '~/about.md') return goTo('/about')
+      if (path === '~/journey.log') journeyLog()
+      else if (dotfiles[name]) printScript(dotfiles[name])
+      else if (name.endsWith('.sh')) printScript(fakeScripts[name] || [])
+      else return goTo(`/posts/${name.slice(0, -3)}`)
+      return 'done'
+    },
+    pwd() {
+      print(escapeHtml('/home/balpars' + session.cwd.slice(1)))
+      return 'done'
+    },
+    clear() {
+      clearScreen()
+      return 'done'
+    },
+    whoami() {
+      print('guest. a curious reader, probably.')
+      return 'done'
+    },
+    echo(args) {
+      print(escapeHtml(args.join(' ')))
+      return 'done'
+    },
+    tail(args) {
+      if (resolvePath(args[args.length - 1] || '', session.cwd) === '~/journey.log') journeyLog()
+      else printError('tail: only journey.log is worth tailing here')
+      return 'done'
+    },
+    theme(args) {
+      const current = document.documentElement.getAttribute('data-theme') || ''
+      if (!fs.themes.length) {
+        print('this site has exactly one theme. it is perfect.')
+      } else if (!args[0]) {
+        print(escapeHtml(`current theme: ${current}`))
+        print('usage: theme &lt;name&gt; | theme list')
+      } else if (args[0] === 'list') {
+        print(escapeHtml(fs.themes.join('  ')))
+      } else if (fs.themes.includes(args[0])) {
+        quietThemeChange = true
+        document.documentElement.setAttribute('data-theme', args[0])
+        localStorage.setItem('data-theme', args[0])
+      } else {
+        printError(`theme: unknown theme '${args[0]}' (try theme list)`)
+      }
+      return 'done'
+    },
+    sh(args) {
+      return runScript(args[0] || '').then((ran) => {
+        if (!ran) printError(`sh: ${args[0] || ''}: No such file or directory`)
+        return 'done' as Result
+      })
+    },
+  }
+
+  // Readers of a security blog will poke at the "system". Answer in kind.
+  // Returns 'attack' (the castle guard reacts), 'joke', or null for normal handling.
+  // What the guard charges the intruder with, set by pokedOutside()
+  let crime = 'poking at the castle walls'
+
+  function pokedOutside(command: string, arg: string): 'attack' | 'joke' | null {
+    const say = (text: string) => print(escapeHtml(text), 'pre')
+    const attack = (charge: string) => {
+      crime = charge
+      return 'attack' as const
+    }
+    // ../../.. that climbs above home: the classic web attack, on a static site
+    let climbed = false
+    if (!arg.startsWith('/') && !arg.startsWith('~')) {
+      let depth = session.cwd === '~' ? 0 : session.cwd.split('/').length - 1
+      for (const part of arg.split('/')) {
+        if (part === '..') depth--
+        else if (part && part !== '.') depth++
+        if (depth < 0) climbed = true
+      }
+    }
+    if (climbed) printError(`${command}: ${arg}: path traversal detected`)
+    if (/(^|\/)etc\/passwd$/.test(arg)) {
+      say(
+        [
+          'root:x:0:0:definitely not you:/root:/usr/sbin/nologin',
+          'balpars:x:1000:1000:the author:/home/balpars:/bin/balpars-sh',
+          'guest:x:1001:1001:a curious reader:/home/balpars:/bin/balpars-sh',
+          'castle_guard:x:1337:1337:watches for path traversal:/castle:/bin/false',
+        ].join('\n'),
+      )
+      return attack(
+        climbed
+          ? 'path traversal on a static blog hosted on GitHub Pages'
+          : 'reading /etc/passwd on a website that has no server',
+      )
+    }
+    if (/(^|\/)etc\/shadow$/.test(arg)) {
+      printError(`${command}: ${arg}: Permission denied. the hashes are salted with tears anyway.`)
+      return attack('going after password hashes that were never there')
+    }
+    if (/\.ssh|id_rsa|id_ed25519/.test(arg)) {
+      print(
+        `${escapeHtml(command)}: the only key on this blog is the one from ` +
+          `${postLink('diffie-hellman-key-exchange', 'Diffie-Hellman')}. go read it instead.`,
+      )
+      return attack('looking for private keys in a public repo')
+    }
+    if (/(^|\/)\.env$/.test(arg)) {
+      say('SECRET_KEY=hunter2\n# just kidding. there are no secrets in a static site.')
+      return attack('hunting for secrets in plain HTML')
+    }
+    if (/(^|\/)flag(\.txt)?$/i.test(arg)) {
+      say('FLAG{th3_r34l_fl4g_w4s_th3_p0sts_w3_r34d_4l0ng_th3_w4y}')
+      return 'joke'
+    }
+    if (climbed) return attack('path traversal on a static blog hosted on GitHub Pages')
+    // Absolute paths outside home (/etc, /root, /proc, ...)
+    if (arg.startsWith('/') && arg !== '/') {
+      printError(`${command}: ${arg}: this shell is chrooted to ~. there is nothing above home.`)
+      return attack('trying to escape a chroot that is made of JavaScript')
+    }
+    return null
+  }
+
+  // The castle guard answers an attack: the castle is printed, then soldiers
+  // march out of the gate and spread into a line. Animated in place.
+  async function guardResponds() {
+    await wait(350)
+    print('<span class="error">[!] intrusion attempt. the castle guard is on its way.</span>')
+    await castleAge()
+    const soldier = [' o ', '/|\\', '/ \\']
+    const frames = [[10], [7, 13], [4, 10, 16], [1, 7, 13, 19]]
+    const army = (cols: number[]) =>
+      soldier
+        .map((row) => {
+          let line = ' '.repeat(24)
+          for (const col of cols) line = line.slice(0, col) + row + line.slice(col + row.length)
+          return line.trimEnd()
+        })
+        .join('\n')
+    const line: Line = { kind: 'out', html: '', cls: 'castle soldiers' }
+    session.lines.push(line)
+    const element = lineElement(line)
+    screen?.append(element)
+    for (const cols of frames) {
+      line.html = escapeHtml(army(cols))
+      element.innerHTML = line.html
+      scrollToEnd()
+      await wait(320)
+    }
+    print(`<span class="error">[guard] intruder repelled. found guilty of ${escapeHtml(crime)}.</span>`)
+  }
+
+  // A few commands people will try anyway
+  const jokes: Record<string, string> = {
+    rm: 'rm: this blog is read-only. so are you.',
+    exit: 'there is no exit. only cd ~',
+    logout: 'there is no exit. only cd ~',
+    vim: 'no editors here. you can read, not write.',
+    vi: 'no editors here. you can read, not write.',
+    nano: 'no editors here. you can read, not write.',
+    emacs: 'no editors here. you can read, not write.',
+    ssh: 'you are already as far in as you can get.',
+    curl: 'no internet in here. it is cozier that way.',
+    wget: 'no internet in here. it is cozier that way.',
+  }
+
+  // ---------------------------------------------------------------- the classics, all fake
+
+  const loadedAt = Date.now()
+  const out = (text: string, cls = 'pre') => print(escapeHtml(text), cls)
+  const label = (name: string, value: string) =>
+    print(`<span class="prompt">${escapeHtml(name)}:</span> ${escapeHtml(value)}`)
+
+  async function denied(lines: string[], pause = 500) {
+    for (const line of lines) {
+      out(line)
+      await wait(pause)
+    }
+  }
+
+  const fortunes = [
+    "it's always DNS.",
+    'the S in IoT stands for security.',
+    'works on my machine.',
+    'have you tried turning it off and on again?',
+    'there are only two hard things: cache invalidation, naming things and off-by-one errors.',
+    'rm -rf is not a backup strategy.',
+    'the cloud is just someone else\'s computer. this blog is on GitHub\'s.',
+    'a static site has no backend. that is its whole security model.',
+  ]
+
+  const readOnly = ['touch', 'mkdir', 'rmdir', 'mv', 'cp', 'chmod', 'chown', 'ln', 'tee', 'dd']
+  const packageManagers = ['apt', 'apt-get', 'yum', 'dnf', 'pacman', 'brew', 'pip', 'npm']
+  const interpreters = ['python', 'python3', 'node', 'irb', 'php', 'perl']
+
+  const extraCommands: Record<string, (args: string[]) => Promise<Result> | Result> = {
+    async id() {
+      out('uid=0(root) gid=0(root) groups=0(root)')
+      await wait(900)
+      out('...just kidding. uid=1001(guest) gid=1001(guest) groups=1001(guest),1337(readers)')
+      return 'done'
+    },
+    groups() {
+      out('guest readers night-owls')
+      return 'done'
+    },
+    uname(args) {
+      out(
+        args.includes('-a')
+          ? 'Linux journey 6.6.6-castle #1 SMP PREEMPT_DYNAMIC Thu Jan  1 00:00:00 UTC 1970 x86_64 GNU/Linux (allegedly)'
+          : 'balpars-sh',
+      )
+      return 'done'
+    },
+    hostname() {
+      out('journey')
+      return 'done'
+    },
+    date() {
+      out(new Date().toString())
+      return 'done'
+    },
+    uptime() {
+      const minutes = Math.max(1, Math.round((Date.now() - loadedAt) / 60000))
+      const now = new Date().toTimeString().slice(0, 8)
+      out(` ${now} up ${minutes} min,  1 user,  load average: 0.00, 0.00, 0.00 (it's a static site)`)
+      return 'done'
+    },
+    ps() {
+      out(
+        [
+          'USER       PID  %CPU %MEM COMMAND',
+          'root         1   0.0  0.1 /sbin/castle-init',
+          'root        42   0.1  0.2 castle_guard --watch path_traversal',
+          'balpars    404   0.0  0.0 coffee (not found)',
+          'guest     1337   0.3  0.5 -balpars-sh',
+          'guest     2024  99.9 12.0 ./mine_bitcoin.sh  [definitely not running]',
+        ].join('\n'),
+      )
+      return 'done'
+    },
+    top() {
+      out('top: the only process here is you, reading. CPU usage: mostly curiosity.')
+      return 'done'
+    },
+    df() {
+      out(
+        [
+          'Filesystem      Size  Used Avail Use% Mounted on',
+          'github-pages    1.0G  4.2M 1020M   1% /',
+          'castle          inf     0   inf    0% /castle',
+          'attention       100%   99%   1%   99% /you',
+        ].join('\n'),
+      )
+      return 'done'
+    },
+    free() {
+      out(
+        [
+          '               total        used        free',
+          'Mem:           16Gi        15Gi       1.0Gi   (browser tabs)',
+          'Coffee:           1           1           0',
+        ].join('\n'),
+      )
+      return 'done'
+    },
+    who() {
+      const when = new Date().toISOString().slice(0, 16).replace('T', ' ')
+      out(`guest    pts/0        ${when} (you)\nbalpars  pts/1        ${when} (probably writing the next post)`)
+      return 'done'
+    },
+    ifconfig() {
+      out(
+        [
+          'eth0: flags=4163<UP,BROADCAST,RUNNING,STATIC>  mtu 1500',
+          '      inet 127.0.0.1  netmask 255.0.0.0',
+          '      RX packets: every post you read   TX packets: 0',
+          "      (there is no network in here. it's a static site.)",
+        ].join('\n'),
+      )
+      return 'done'
+    },
+    async ping(args) {
+      const host = args.find((arg) => !arg.startsWith('-')) || 'balpars.com'
+      out(`PING ${host}: 56 data bytes`)
+      for (let seq = 0; seq < 3; seq++) {
+        await wait(700)
+        out(`64 bytes from ${host}: icmp_seq=${seq} ttl=64 time=0.0${seq + 4} ms (imaginary)`)
+      }
+      out(`--- ${host} ping statistics ---\n3 packets transmitted, 3 received, 0% packet loss, 100% made up`)
+      return 'done'
+    },
+    async nmap(args) {
+      const host = args.find((arg) => !arg.startsWith('-')) || 'balpars.com'
+      out(`Starting Nmap 7.94 ( https://nmap.org )\nNmap scan report for ${host}`)
+      await wait(900)
+      out('PORT    STATE SERVICE\n443/tcp open  https (a blog. that is the whole attack surface.)')
+      crime = 'port scanning a static site'
+      await guardResponds()
+      return 'done'
+    },
+    history() {
+      ;(session.typedHistory || []).forEach((entry, index) => out(`${String(index + 1).padStart(4)}  ${entry}`))
+      return 'done'
+    },
+    man(args) {
+      out(args[0] ? `No manual entry for ${args[0]}. the posts are the manual.` : 'What manual page do you want? (try help)')
+      return 'done'
+    },
+    which(args) {
+      for (const name of args) {
+        if (aliases[name]) {
+          out(`${name}: aliased to \`${aliases[name]}\``)
+          continue
+        }
+        const known = commands[name] || readOnly.includes(name) || name === 'balpars-sh'
+        out(known ? (name === 'balpars-sh' ? '/bin/balpars-sh' : `/usr/bin/${name}`) : `${name} not found`)
+      }
+      return 'done'
+    },
+    env() {
+      out(
+        [
+          'USER=guest',
+          'HOME=/home/balpars',
+          'SHELL=/bin/balpars-sh',
+          `PWD=/home/balpars${session.cwd.slice(1)}`,
+          'PATH=/usr/local/bin:/usr/bin:/castle/armory',
+          'EDITOR=cat',
+          'COFFEE=required',
+        ].join('\n'),
+      )
+      return 'done'
+    },
+    alias() {
+      out(aliasLines().join('\n'))
+      return 'done'
+    },
+    neofetch() {
+      print('<span class="prompt">guest</span>@<span class="prompt">journey</span>')
+      out('-------------')
+      label('OS', 'balpars-sh 0.1 (castle edition)')
+      label('Host', 'GitHub Pages')
+      label('Kernel', '6.6.6-castle')
+      label('Uptime', `${Math.max(1, Math.round((Date.now() - loadedAt) / 60000))} mins`)
+      label('Packages', `${fs.posts.length} posts, ${fs.tags.length} tags, ${fs.series.length} series`)
+      label('Shell', 'balpars-sh')
+      label('Theme', document.documentElement.getAttribute('data-theme') || 'default')
+      label('CPU', 'your browser, probably bored')
+      label('Memory', 'whatever your other tabs left')
+      return 'done'
+    },
+    fortune() {
+      out(fortunes[Math.floor(Math.random() * fortunes.length)])
+      return 'done'
+    },
+    cowsay(args) {
+      const text = args.join(' ') || 'moo. read a post.'
+      out(
+        [
+          ' ' + '_'.repeat(text.length + 2),
+          `< ${text} >`,
+          ' ' + '-'.repeat(text.length + 2),
+          '        \\   ^__^',
+          '         \\  (oo)\\_______',
+          '            (__)\\       )\\/\\',
+          '                ||----w |',
+          '                ||     ||',
+        ].join('\n'),
+      )
+      return 'done'
+    },
+    kill() {
+      out('kill: (42) - Operation not permitted. the castle guard does not die.')
+      return 'done'
+    },
+    killall() {
+      out('killall: you and what army? (the castle has one)')
+      return 'done'
+    },
+    async reboot() {
+      out('Broadcast message from root@journey: the system is going down for reboot NOW!')
+      await wait(1200)
+      out('...just kidding. GitHub said no. close the tab instead.')
+      return 'done'
+    },
+    passwd() {
+      out('Changing password for guest.\nCurrent password:')
+      out("passwd: Authentication token manipulation error (there are no passwords on a static site)")
+      return 'done'
+    },
+    git(args) {
+      if (args[0] === 'log') {
+        out(
+          [
+            '7d3424c typo',
+            '4caaa2a published',
+            '2a7be23 new post, one model two machines',
+            '0ff1ce5 fix typo in the typo fix',
+            'deadbee castle guard: add path traversal detection',
+          ].join('\n'),
+        )
+      } else if (args[0] === 'status') {
+        out('On branch main\nnothing to commit, the castle is clean')
+      } else {
+        out("git: you can read this blog from here, not fork it. (GitHub has the real repo.)")
+      }
+      return 'done'
+    },
+    make(args) {
+      out(
+        args.join(' ') === 'me a sandwich'
+          ? 'What? Make it yourself.'
+          : 'make: *** No targets specified and no makefile found.  Stop.',
+      )
+      return 'done'
+    },
+    async su() {
+      out('Password:')
+      await wait(1000)
+      printError('su: Authentication failure')
+      out("(hint: it's not hunter2)")
+      return 'done'
+    },
+    async sudo(args) {
+      const rest = args.join(' ')
+      if (!rest) {
+        out('usage: sudo <command>  (it will not help, but go on)')
+      } else if (rest === 'whoami') {
+        out('root')
+        await wait(900)
+        out('...in your dreams. still guest.')
+      } else if (rest === 'su' || rest === '-i' || rest === 'su -') {
+        await extraCommands.su([])
+      } else if (rest === 'make me a sandwich') {
+        out('Okay.')
+      } else {
+        out('[sudo] password for guest:')
+        await wait(1000)
+        out('guest is not in the sudoers file. this incident will be reported.')
+      }
+      return 'done'
+    },
+  }
+  extraCommands.htop = extraCommands.top
+  extraCommands.w = extraCommands.who
+  extraCommands.ip = extraCommands.ifconfig
+  extraCommands.printenv = extraCommands.env
+  extraCommands.fastfetch = extraCommands.neofetch
+  extraCommands.shutdown = extraCommands.reboot
+  extraCommands.poweroff = extraCommands.reboot
+  for (const name of readOnly) {
+    extraCommands[name] = (args) => {
+      out(`${name}: cannot modify '${args[args.length - 1] || 'anything'}': Read-only file system (it's a blog)`)
+      return 'done'
+    }
+  }
+  for (const name of packageManagers) {
+    extraCommands[name] = () => {
+      out('E: Could not open lock file /var/lib/dpkg/lock - open (13: Permission denied)')
+      out("E: are you root? (you are not. although 'id' might tell you otherwise.)")
+      return 'done'
+    }
+  }
+  for (const name of interpreters) {
+    extraCommands[name] = () => {
+      out('no interpreters in the castle. only reading.')
+      return 'done'
+    }
+  }
+  Object.assign(commands, extraCommands)
+
+  async function execute(raw: string) {
+    if (busy) return
+    busy = true
+    refocus = true
+    removeIdlePrompt()
+    addCommandLine(raw)
+    const text = raw.trim()
+    if (text) session.typedHistory = [...(session.typedHistory || []), text]
+    const [first, ...rest] = text.split(/\s+/)
+    const expanded = aliases[first] ? [...aliases[first].split(' '), ...rest] : [first, ...rest]
+    const [name, ...args] = expanded
+    let result: Result = 'done'
+    if (!text) {
+      // just a new prompt
+    } else if (commands[name]) {
+      result = await commands[name](args)
+    } else if (/^(\.\/|~\/|\/)/.test(name) && name.endsWith('.sh')) {
+      if (!(await runScript(name))) printError(`balpars-sh: ${name}: No such file or directory`)
+    } else if (jokes[name]) {
+      print(escapeHtml(jokes[name]))
+    } else {
+      printError(`balpars-sh: ${name}: command not found (try help)`)
+    }
+    if (result === 'navigating') return
+    saveSession()
+    showIdlePrompt()
+    busy = false
+  }
+
+  function clearScreen() {
+    session.lines = []
+    if (screen) screen.innerHTML = ''
+    saveSession()
+  }
+
+  // ---------------------------------------------------------------- automatic typing
+
+  // Types a command at the prompt, then "presses Enter"
+  async function run(step: Step) {
+    const p = document.createElement('p')
+    p.innerHTML = `<span class="prompt">${escapeHtml(session.cwd)} $</span> `
+    const typed = document.createElement('span')
+    typed.className = 'typing'
+    p.append(typed)
+    screen?.append(p)
+    scrollToEnd()
+    await wait(between(100, 180))
+    // Long names are tab-completed like in a real shell: type the first few
+    // letters of the last word, pause, then the rest appears at once
+    const lastWord = Math.max(step.text.lastIndexOf(' '), step.text.lastIndexOf('/')) + 1
+    const typedPart =
+      step.text.length > 18 ? step.text.slice(0, Math.min(lastWord + 4, step.text.length)) : step.text
+    for (const char of typedPart) {
+      typed.textContent += char
+      await wait(/[ ./_~-]/.test(char) ? between(60, 110) : between(28, 60))
+    }
+    if (typedPart !== step.text) {
+      await wait(between(110, 170))
+      typed.textContent = step.text
+    }
+    await wait(between(100, 160))
+    typed.className = ''
+    session.lines.push({ kind: 'cmd', cwd: session.cwd, text: step.text })
+    if (step.cwd) session.cwd = step.cwd
+    setTitle()
+  }
+
+  // Splits the page into blocks small enough to print one after another
+  function printableBlocks(root: Element, depth = 0): HTMLElement[] {
+    const children = [...root.children].filter(
+      (el): el is HTMLElement => el instanceof HTMLElement && !el.matches('script, style, template'),
+    )
+    return children.flatMap((el) => {
+      const container =
+        el.matches('div, section, article, ul, ol') &&
+        !el.matches('.expressive-code, figure, .toc, aside, nav') &&
+        el.children.length > 1 &&
+        depth < 4
+      return container ? printableBlocks(el, depth + 1) : [el]
+    })
+  }
+
+  // Prints the page content top to bottom, like command output
+  async function printContent() {
+    const root = document.documentElement
+    const main = document.querySelector('main')
+    if (!main || !root.classList.contains('term-printing')) return
+    const blocks = printableBlocks(main)
+    blocks.forEach((block) => (block.style.visibility = 'hidden'))
+    root.classList.remove('term-printing')
+    for (const [index, block] of blocks.entries()) {
+      block.style.visibility = ''
+      if (index < 24) await wait(30)
+    }
+  }
+
+  async function runHomeExtras() {
+    const isHome = (location.pathname.replace(/^\/tr(?=\/|$)/, '') || '/') === '/'
+    if (!isHome || session.homeDone) return
+    session.homeDone = true
+    await wait(500)
+    await run({ text: 'tail journey.log' })
+    for (const post of fs.posts.slice(0, 5)) {
+      print(`<span class="log-date">[${post.date}]</span> ${postLink(post.slug, post.title)}`)
+      await wait(between(25, 60))
+    }
+  }
+
+  // Easter egg, once per browser session. Waits while the reader is typing.
+  function scheduleEgg(key: 'bitcoinShown', delay: number, script: string) {
+    if (session[key]) return
+    setTimeout(async function attempt() {
+      if (session[key]) return
+      if (busy || currentInput()?.value) return setTimeout(attempt, 15_000)
+      busy = true
+      session[key] = true
+      const hadFocus = document.activeElement === currentInput()
+      removeIdlePrompt()
+      await run({ text: script })
+      await runScript(script)
+      saveSession()
+      refocus = hadFocus
+      showIdlePrompt()
+      busy = false
+    }, delay)
+  }
+
+  async function start() {
+    if (!terminal || !screen || !fs) return
+    session.lines.forEach((line) => screen.append(lineElement(line)))
+    setTitle()
+    scrollToEnd()
+    busy = true
+    // Arriving from a click or a typed command: it was already typed on the previous page
+    const arrivedByClick = session.pending === location.pathname
+    session.pending = undefined
+    if (!arrivedByClick) {
+      for (const step of stepsFor(location.pathname, session.cwd)) await run(step)
+    }
+    if (document.querySelector('[data-not-found]')) {
+      const path = location.pathname.replace(/\/$/, '')
+      printError(`bash: cd: ~${path}: No such file or directory`)
+    }
+    await printContent()
+    await runHomeExtras()
+    saveSession()
+    showIdlePrompt()
+    busy = false
+    scheduleEgg('bitcoinShown', BITCOIN_DELAY, './mine_bitcoin.sh')
+  }
+
+  // Clicking a link on the site types its command first, then navigates
+  async function navigate(url: URL) {
+    busy = true
+    removeIdlePrompt()
+    const rect = terminal!.getBoundingClientRect()
+    if (rect.bottom < 0 || rect.top > window.innerHeight) {
+      window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' })
+      await wait(400)
+    }
+    for (const step of stepsFor(url.pathname, session.cwd)) await run(step)
+    session.pending = url.pathname
+    saveSession()
+    window.location.href = url.href
+  }
+
+  document.addEventListener('click', (event) => {
+    if (!terminal || event.defaultPrevented || event.button !== 0) return
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    const link = (event.target as Element).closest?.('a')
+    if (!link || (link.target && link.target !== '_self') || link.hasAttribute('download')) return
+    if (link.closest('dialog')) return
+    const url = new URL(link.href, location.href)
+    if (url.origin !== location.origin) return
+    if (url.pathname === location.pathname && url.hash) return
+    if (/\.\w+$/.test(url.pathname)) return // rss.xml and other files
+    event.preventDefault()
+    if (busy) return
+    navigate(url)
+  })
+
+  // Clicking the terminal (but not a link in it) puts the cursor in the prompt.
+  // While the terminal is still typing there is no prompt yet: remember the click
+  // and focus the prompt as soon as it appears.
+  terminal?.addEventListener('click', (event) => {
+    if ((event.target as Element).closest('a') || window.getSelection()?.toString()) return
+    const input = currentInput()
+    if (input) input.focus({ preventScroll: true })
+    else refocus = true
+  })
+
+  // Keep what the reader types in that short wait, instead of dropping it
+  document.addEventListener('keydown', (event) => {
+    if (!refocus || currentInput() || event.ctrlKey || event.metaKey || event.altKey) return
+    if (event.key.length === 1) pendingKeys += event.key
+    else if (event.key === 'Backspace') pendingKeys = pendingKeys.slice(0, -1)
+    else return
+    event.preventDefault()
+  })
+
+  // Theme changes from the palette menu show up as a command too
+  new MutationObserver(async () => {
+    if (quietThemeChange) {
+      quietThemeChange = false
+      return
+    }
+    if (busy) return
+    busy = true
+    const hadFocus = document.activeElement === currentInput()
+    removeIdlePrompt()
+    await run({ text: `theme ${document.documentElement.getAttribute('data-theme')}` })
+    saveSession()
+    refocus = hadFocus
+    showIdlePrompt()
+    busy = false
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+
+  start()
+</script>
+
+<style>
+  .terminal {
+    margin-top: 1.25rem;
+    height: 14rem;
+    display: flex;
+    flex-direction: column;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    font-variant-ligatures: none;
+    border: 1px solid color-mix(in srgb, var(--theme-foreground) 10%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--theme-background) 92%, var(--theme-foreground));
+    overflow: hidden;
+    cursor: text;
+  }
+
+  .terminal-bar {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 10px;
+    background: color-mix(in srgb, var(--theme-foreground) 6%, transparent);
+
+    span {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--theme-foreground) 20%, transparent);
+    }
+
+    em {
+      margin-left: auto;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-style: normal;
+      color: color-mix(in srgb, var(--theme-foreground) 45%, transparent);
+    }
+  }
+
+  .terminal-screen {
+    flex: 1;
+    padding: 8px 10px 10px;
+    overflow-y: auto;
+    scrollbar-width: none;
+    color: color-mix(in srgb, var(--theme-foreground) 80%, transparent);
+  }
+</style>
+
+<style is:global>
+  /* Lines in the terminal are added by the script, so they are styled globally */
+  .terminal-screen p {
+    margin: 0 0 2px;
+    overflow-wrap: anywhere;
+  }
+
+  .terminal-screen .prompt,
+  .terminal-screen .log-date,
+  .terminal-screen .cursor,
+  .terminal-screen .dir,
+  .terminal-screen .typing::after {
+    color: var(--theme-accent);
+  }
+
+  .terminal-screen .log-date {
+    opacity: 0.75;
+  }
+
+  .terminal-screen .pre {
+    white-space: pre-wrap;
+  }
+
+  .terminal-screen .comment {
+    opacity: 0.55;
+  }
+
+  .terminal-screen .soldiers {
+    white-space: pre;
+  }
+
+  .terminal-screen .castle {
+    margin: 0;
+    line-height: 1.2;
+    white-space: pre;
+    overflow-wrap: normal;
+    color: color-mix(in srgb, var(--theme-accent) 55%, transparent);
+  }
+
+  .terminal-screen .error {
+    color: var(--theme-caution);
+  }
+
+  .terminal-screen a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .terminal-screen a:hover {
+    color: var(--theme-accent);
+    text-decoration: underline;
+  }
+
+  .terminal-screen .typing::after {
+    content: '▌';
+  }
+
+  /* The prompt you can type into */
+  .terminal-screen .idle {
+    display: flex;
+    align-items: baseline;
+    gap: 1ch;
+  }
+
+  .terminal-screen .line-input {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* Receives the keys but stays invisible; what you see is the mirror and the block */
+  .terminal-screen .term-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 0;
+    border: none;
+    outline: none !important;
+    background: transparent;
+    color: transparent;
+    caret-color: transparent;
+    font: inherit;
+    opacity: 0;
+  }
+
+  .terminal-screen .cursor {
+    animation: terminal-blink 1.1s steps(1) infinite;
+  }
+
+  @keyframes terminal-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .terminal-screen .cursor {
+      animation: none;
+    }
+  }
+
+  /* Set in <head> before the page paints; the terminal script prints the content
+     and removes it. The head script also removes it after a few seconds as a fallback. */
+  html.term-printing main {
+    visibility: hidden;
+  }
+</style>

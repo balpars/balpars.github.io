@@ -13,6 +13,7 @@ import {
   type ExpressiveCodeTheme,
 } from 'astro-expressive-code'
 import { getCollection, type CollectionEntry } from 'astro:content'
+import { defaultLang, localizePath, type Lang } from '~/i18n'
 import Color from 'color'
 import { slug } from 'github-slugger'
 
@@ -214,11 +215,32 @@ export async function resolveThemeColorStyles(
   return Object.fromEntries(await Promise.all(resolvedThemes)) as ThemesWithColorStyles
 }
 
-export async function getSortedPosts() {
+const TR_PREFIX = 'tr/'
+
+// The URL id of a post, the same for an English post and its Turkish translation
+export function postSlug(post: CollectionEntry<'posts'>): string {
+  return post.id.startsWith(TR_PREFIX) ? post.id.slice(TR_PREFIX.length) : post.id
+}
+
+export function postUrl(post: CollectionEntry<'posts'>, lang: Lang): string {
+  return localizePath(`/posts/${postSlug(post)}`, lang)
+}
+
+// Posts for one language, oldest first. Turkish uses each post's translation
+// when there is one and falls back to the English post otherwise.
+export async function getSortedPosts(lang: Lang = defaultLang) {
   const allPosts = await getCollection('posts', ({ data }) => {
     return import.meta.env.PROD ? data.draft !== true : true
   })
-  const sortedPosts = allPosts.sort((a, b) => {
+  const english = allPosts.filter((post) => !post.id.startsWith(TR_PREFIX))
+  const posts =
+    lang === defaultLang
+      ? english
+      : english.map(
+          (post) =>
+            allPosts.find((p) => p.id === `${TR_PREFIX}${post.id}`) ?? post,
+        )
+  const sortedPosts = posts.sort((a, b) => {
     return a.data.published < b.data.published ? -1 : 1
   })
   return sortedPosts
@@ -287,9 +309,12 @@ export class SeriesGroup extends PostsCollationGroup {
     super(title, url, items)
   }
   // Factory method to create a SeriesGroup instance with async data fetching
-  static async build(posts?: CollectionEntry<'posts'>[]): Promise<SeriesGroup> {
-    const sortedPosts = posts || (await getSortedPosts())
-    const seriesGroup = new SeriesGroup('Series', '/series', [])
+  static async build(
+    posts?: CollectionEntry<'posts'>[],
+    lang: Lang = defaultLang,
+  ): Promise<SeriesGroup> {
+    const sortedPosts = posts || (await getSortedPosts(lang))
+    const seriesGroup = new SeriesGroup('Series', localizePath('/series', lang), [])
     sortedPosts.forEach((post) => {
       const frontmatterSeries = post.data.series
       if (frontmatterSeries) {
@@ -307,9 +332,12 @@ export class TagsGroup extends PostsCollationGroup {
   }
 
   // Factory method to create a SeriesGroup instance with async data fetching
-  static async build(posts?: CollectionEntry<'posts'>[]): Promise<SeriesGroup> {
-    const sortedPosts = posts || (await getSortedPosts())
-    const tagsGroup = new TagsGroup('Tags', '/tags', [])
+  static async build(
+    posts?: CollectionEntry<'posts'>[],
+    lang: Lang = defaultLang,
+  ): Promise<SeriesGroup> {
+    const sortedPosts = posts || (await getSortedPosts(lang))
+    const tagsGroup = new TagsGroup('Tags', localizePath('/tags', lang), [])
     sortedPosts.forEach((post) => {
       const frontmatterTags = post.data.tags || []
       frontmatterTags.forEach((tag) => {

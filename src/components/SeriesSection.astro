@@ -1,6 +1,7 @@
 ---
 import type { CollectionEntry } from 'astro:content'
 import { SeriesGroup } from '~/utils'
+import { getLangFromUrl, seriesLabel } from '~/i18n'
 
 interface Props {
   posts: CollectionEntry<'posts'>[]
@@ -8,7 +9,8 @@ interface Props {
 
 const { posts } = Astro.props
 
-const seriesGroup = await SeriesGroup.build(posts)
+const lang = getLangFromUrl(Astro.url)
+const seriesGroup = await SeriesGroup.build(posts, lang)
 ---
 
 <ul class="flex flex-wrap gap-x-3 gap-y-4 my-5">
@@ -19,7 +21,7 @@ const seriesGroup = await SeriesGroup.build(posts)
           href={series.url}
           class="flex items-start gap-2.5 py-2 pl-4 pr-3 bg-accent/7 rounded-3xl border-transparent hover:border-accent/20 border-1 text-foreground/90"
         >
-          {series.title}
+          {seriesLabel(series.title, lang)}
           <span class="rounded-full bg-foreground/7 text-foreground/90 px-2 py-1 text-xs font-semibold">
             {series.entries.length}
           </span>
