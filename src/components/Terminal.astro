@@ -71,6 +71,8 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
     homeDone?: boolean
     bitcoinShown?: boolean
     typedHistory?: string[]
+    // The reader was typing in the terminal when they left the previous page
+    keepFocus?: boolean
   }
   type Fs = {
     langPrefix: string
@@ -364,6 +366,7 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
     const target = fs.langPrefix + (path === '/' && fs.langPrefix ? '' : path)
     if (target === location.pathname) return 'done'
     session.pending = target
+    session.keepFocus = true
     saveSession()
     window.location.href = target
     return 'navigating'
@@ -1304,8 +1307,19 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
     // Arriving from a click or a typed command: it was already typed on the previous page
     const arrivedByClick = session.pending === location.pathname
     session.pending = undefined
+    refocus = Boolean(session.keepFocus)
+    session.keepFocus = false
     if (!arrivedByClick) {
-      for (const step of stepsFor(location.pathname, session.cwd)) await run(step)
+      const steps = stepsFor(location.pathname, session.cwd)
+      // After a reload the last command is already this page's; don't type it twice
+      const lastCommand = [...session.lines].reverse().find((line) => line.kind === 'cmd')
+      const alreadyRan = steps.length > 0 && lastCommand?.text === steps[steps.length - 1].text
+      for (const step of steps) {
+        if (alreadyRan) {
+          if (step.cwd) session.cwd = step.cwd
+        } else await run(step)
+      }
+      setTitle()
     }
     if (document.querySelector('[data-not-found]')) {
       const path = location.pathname.replace(/\/$/, '')
@@ -1322,6 +1336,7 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
   // Clicking a link on the site types its command first, then navigates
   async function navigate(url: URL) {
     busy = true
+    session.keepFocus = document.activeElement === currentInput()
     removeIdlePrompt()
     const rect = terminal!.getBoundingClientRect()
     if (rect.bottom < 0 || rect.top > window.innerHeight) {
@@ -1345,6 +1360,10 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
     if (url.pathname === location.pathname && url.hash) return
     if (/\.\w+$/.test(url.pathname)) return // rss.xml and other files
     event.preventDefault()
+    if (url.pathname === location.pathname) {
+      window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' })
+      return
+    }
     if (busy) return
     navigate(url)
   })
