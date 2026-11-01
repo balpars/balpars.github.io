@@ -11,8 +11,6 @@ toc: true
 series: 'Local LLMs'
 ---
 
-# One Model, Two Machines: Running an LLM That Fits on Neither
-
 I have a 16 GB Mac mini and a Windows PC with a 12 GB graphics card. Neither can run a 27B model on its own.
 
 What happens if I ask them to run it together?
