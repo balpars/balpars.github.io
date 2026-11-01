@@ -2,7 +2,7 @@
 title: "One Model, Two Machines: Running an LLM That Fits on Neither"
 author: balpars
 published: 2026-11-01
-draft: true
+draft: false
 tags:
   - local_llm
   - distributed_inference
