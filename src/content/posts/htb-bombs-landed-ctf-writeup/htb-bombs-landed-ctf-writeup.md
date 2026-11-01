@@ -1,6 +1,7 @@
 ---
 title: Hack The Box Bombs Landed CTF Detailed Writeup
 published: 2024-02-23
+author: balpars
 draft: false
 tags: ['ctf', 'reversing']
 description: Writeup for the Hack The Box | Bombs landed reverse engineering CTF, detailed

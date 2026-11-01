@@ -1,5 +1,6 @@
 ---
 title: "The Key from Diffie-Hellman"
+author: balpars
 published: 2024-03-02
 draft: false
 tags: ['cryptography']

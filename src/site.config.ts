@@ -33,10 +33,6 @@ const config: SiteConfig = {
       url: '/',
     },
     {
-      name: 'Vault',
-      url: '/vault',
-    },
-    {
       name: 'About',
       url: '/about',
     },
@@ -165,7 +161,13 @@ const config: SiteConfig = {
   // Take the values from the generated script tag at https://giscus.app and fill them in here.
   // IMPORTANT: Update giscus.json in the root of the project with your own website URL
   // If you don't want to use Giscus, set this to undefined.
-  giscus: undefined,
+  giscus: {
+    repo: 'balpars/balpars.github.io',
+    repoId: 'R_kgDOPjiUJw',
+    category: 'Announcements',
+    categoryId: 'DIC_kwDOPjiUJ84DKJCE',
+    reactionsEnabled: true,
+  },
   // These are characters available for the character chat feature.
   // To add your own character, add an image file to the top-level `/public` directory
   // Make sure to compress the image to a web-friendly size (<100kb)
