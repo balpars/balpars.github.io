@@ -3,6 +3,7 @@ import type { GetStaticPaths } from 'astro'
 import Layout from '~/layouts/Layout.astro'
 import { seriesPaths } from '~/staticPaths'
 import { getLangFromUrl, seriesLabel, t } from '~/i18n'
+import { truncate } from '~/seo'
 import PostPreview from '~/components/PostPreview.astro'
 
 export const getStaticPaths = (async () => {
@@ -16,7 +17,12 @@ const seriesName = seriesLabel(seriesTitle, lang)
 
 <Layout
   title={`${t(lang, 'series.title')}: ${seriesName}`}
-  description={t(lang, 'series.description', { name: seriesName })}
+  description={truncate(
+    t(lang, 'series.description', {
+      name: seriesName,
+      titles: posts.map((post) => post.data.title).join('; '),
+    }),
+  )}
 >
   <div class="mt-2 sm:mt-0">
     <h1 class="sr-only">{`${t(lang, 'series.title')}: ${seriesName}`}</h1>

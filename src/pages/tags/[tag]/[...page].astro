@@ -3,6 +3,7 @@ import type { GetStaticPaths } from 'astro'
 import Layout from '~/layouts/Layout.astro'
 import { tagPaths } from '~/staticPaths'
 import { getLangFromUrl, t, tagLabel } from '~/i18n'
+import { truncate } from '~/seo'
 import Pagination from '~/components/Pagination.astro'
 import PostPreview from '~/components/PostPreview.astro'
 
@@ -18,7 +19,17 @@ const pageTitle =
   (page.currentPage > 1 ? ` - ${t(lang, 'pagination.page')} ${page.currentPage}` : '')
 ---
 
-<Layout title={pageTitle} description={t(lang, 'tag.description', { name: tagName })}>
+<!-- Tag pages repeat the posts' own previews, so they stay out of search results -->
+<Layout
+  title={pageTitle}
+  description={truncate(
+    t(lang, 'tag.description', {
+      name: tagName,
+      titles: page.data.map((post) => post.data.title).join('; '),
+    }),
+  )}
+  noindex
+>
   <div class="mt-2 sm:mt-0">
     <h1 class="sr-only">{`${t(lang, 'tag.title')}: ${tagName}`}</h1>
     {page.data.map((post) => <PostPreview post={post} />)}

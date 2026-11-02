@@ -234,7 +234,7 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
   }
 
   const postLink = (slug: string, label: string) =>
-    `<a href="${fs.langPrefix}/posts/${encodeURIComponent(slug)}" tabindex="-1">${escapeHtml(label)}</a>`
+    `<a href="${fs.langPrefix}/posts/${encodeURIComponent(slug)}/" tabindex="-1">${escapeHtml(label)}</a>`
 
   // ---------------------------------------------------------------- prompt and input
 
@@ -363,7 +363,9 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
 
   // Leaves for another page the same way a click does: the command is already typed
   function goTo(path: string): Result {
-    const target = fs.langPrefix + (path === '/' && fs.langPrefix ? '' : path)
+    // Pages live at folder URLs: "/posts/x/", "/tr/", "/"
+    const joined = fs.langPrefix + path
+    const target = joined.endsWith('/') ? joined : `${joined}/`
     if (target === location.pathname) return 'done'
     session.pending = target
     session.keepFocus = true
@@ -442,7 +444,7 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
       if (entry.name === '.' || entry.name === '..') return `<span class="dir">${name}</span>`
       const page = dirPage(`${dir}/${entry.name}`)
       const label = name + (trailingSlash ? '/' : '')
-      return `<span class="dir">${page ? `<a href="${fs.langPrefix}${page}" tabindex="-1">${label}</a>` : label}</span>`
+      return `<span class="dir">${page ? `<a href="${fs.langPrefix}${page}/" tabindex="-1">${label}</a>` : label}</span>`
     }
     return entry.name.endsWith('.md') && entry.name !== 'about.md' ? postLink(entry.name.slice(0, -3), entry.name) : name
   }

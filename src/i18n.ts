@@ -1,3 +1,5 @@
+import siteConfig from '~/site.config'
+
 // Languages, UI strings and path helpers for the English/Turkish site.
 // English lives at the root ("/posts/x"), Turkish under "/tr" ("/tr/posts/x").
 
@@ -24,7 +26,8 @@ export function isLangActive(lang: Lang): boolean {
 
 const ui = {
   en: {
-    'site.description': 'Balpars Cyber Journey is a blog mainly about Cyber Security.',
+    'site.description':
+      'Hands-on cyber security writing by balpars: malware analysis, reverse engineering, CTF writeups and applied cryptography.',
     'nav.home': 'Home',
     'nav.about': 'About',
     'nav.archive': 'Posts',
@@ -45,11 +48,12 @@ const ui = {
     'pagination.older': 'Older Posts',
     'pagination.page': 'Page',
     'archive.title': 'Posts',
-    'archive.description': 'All posts',
+    'archive.description':
+      'Every post on Balpars Cyber Journey, newest first: malware analysis, reverse engineering, CTF writeups, cryptography and local LLMs.',
     'tag.title': 'Tag',
-    'tag.description': 'All posts tagged with {name}',
+    'tag.description': 'Posts tagged {name} on Balpars Cyber Journey: {titles}',
     'series.title': 'Series',
-    'series.description': 'All posts in the {name} series',
+    'series.description': 'The {name} series on Balpars Cyber Journey, in reading order: {titles}',
     'header.search': 'Open Search',
     'header.theme': 'Select Theme',
     'header.language': 'Language',
@@ -57,7 +61,8 @@ const ui = {
     'side.journal': 'Recent posts',
   },
   tr: {
-    'site.description': 'Balpars Cyber Journey, çoğunlukla siber güvenlik üzerine yazdığım bir blog.',
+    'site.description':
+      "balpars'ın uygulamalı siber güvenlik yazıları: zararlı yazılım analizi, tersine mühendislik, CTF çözümleri ve uygulamalı kriptografi.",
     'nav.home': 'Ana Sayfa',
     'nav.about': 'Hakkımda',
     'nav.archive': 'Yazılar',
@@ -78,11 +83,12 @@ const ui = {
     'pagination.older': 'Eski Yazılar',
     'pagination.page': 'Sayfa',
     'archive.title': 'Yazılar',
-    'archive.description': 'Tüm yazılar',
+    'archive.description':
+      "Balpars Cyber Journey'deki tüm yazılar, en yeniden eskiye: zararlı yazılım analizi, tersine mühendislik, CTF çözümleri, kriptografi ve yerel LLM'ler.",
     'tag.title': 'Etiket',
-    'tag.description': '{name} etiketli tüm yazılar',
+    'tag.description': '{name} etiketli yazılar: {titles}',
     'series.title': 'Seri',
-    'series.description': '{name} serisindeki tüm yazılar',
+    'series.description': '{name} serisi, okuma sırasıyla: {titles}',
     'header.search': 'Aramayı aç',
     'header.theme': 'Tema seç',
     'header.language': 'Dil',
@@ -137,11 +143,17 @@ export function unlocalizePath(path: string): string {
   return stripped === '' ? '/' : stripped
 }
 
-// "/posts/x" -> "/tr/posts/x" for Turkish, unchanged for English
+// "/posts/x" -> "/posts/x/" when the site uses trailing slashes (files like rss.xml stay as they are)
+export function withTrailingSlash(path: string): string {
+  if (!siteConfig.trailingSlashes || path.endsWith('/') || /\.\w+$/.test(path)) return path
+  return `${path}/`
+}
+
+// "/posts/x" -> "/tr/posts/x/" for Turkish, "/posts/x/" for English
 export function localizePath(path: string, lang: Lang): string {
   const base = unlocalizePath(path)
-  if (lang === defaultLang) return base
-  return base === '/' ? `/${lang}` : `/${lang}${base}`
+  if (lang === defaultLang) return withTrailingSlash(base)
+  return withTrailingSlash(base === '/' ? `/${lang}` : `/${lang}${base}`)
 }
 
 export function readingTimeText(minutes: number, lang: Lang): string {

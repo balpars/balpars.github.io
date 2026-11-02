@@ -24,6 +24,7 @@ const pageTitle =
 
 <Layout title={pageTitle} description={t(lang, 'archive.description')}>
   <div class="mt-2 sm:mt-0">
+    <h1 class="sr-only">{pageTitle}</h1>
     {page.data.map((post) => <PostPreview post={post} />)}
     <Pagination
       prevLink={page.url.prev ? page.url.prev : undefined}

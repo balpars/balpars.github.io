@@ -13,7 +13,7 @@ import {
   type ExpressiveCodeTheme,
 } from 'astro-expressive-code'
 import { getCollection, type CollectionEntry } from 'astro:content'
-import { defaultLang, localizePath, type Lang } from '~/i18n'
+import { defaultLang, localizePath, withTrailingSlash, type Lang } from '~/i18n'
 import Color from 'color'
 import { slug } from 'github-slugger'
 
@@ -288,7 +288,7 @@ abstract class PostsCollationGroup implements CollationGroup<'posts'> {
       this.collations.push({
         title: collationTitle,
         titleSlug: collationTitleSlug,
-        url: `${this.url}/${encodeURIComponent(collationTitleSlug)}`,
+        url: withTrailingSlash(`${this.url.replace(/\/$/, '')}/${encodeURIComponent(collationTitleSlug)}`),
         entries: [item],
       })
     }

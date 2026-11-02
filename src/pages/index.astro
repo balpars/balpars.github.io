@@ -9,6 +9,7 @@ import HomeBanner from '~/components/HomeBanner.astro'
 import siteConfig from '~/site.config'
 import SeriesSection from '~/components/SeriesSection.astro'
 import { getLangFromUrl, localizePath, t } from '~/i18n'
+import { websiteSchema } from '~/seo'
 
 const lang = getLangFromUrl(Astro.url)
 const home = await getCollection('home')
@@ -29,7 +30,8 @@ const sortedPosts = await getSortedPosts(lang)
 const postsHaveSeries = sortedPosts.some((post) => post.data.series)
 ---
 
-<Layout>
+<Layout schema={[websiteSchema(t(lang, 'site.description'), lang)]}>
+  <h1 class="sr-only">{siteConfig.title}</h1>
   {
     HomeContent && (
       <HomeBanner avatarImage={homeAvatarImage} githubCalendar={homeGithubCalendar}>

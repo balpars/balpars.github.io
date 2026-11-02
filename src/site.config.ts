@@ -7,7 +7,7 @@ const config: SiteConfig = {
   title: 'Balpars Cyber Journey',
   // The description of your site, used for SEO and RSS feed.
   description:
-    'Balpars Cyber Journey is a blog mainly about Cyber Security.',
+    'Hands-on cyber security writing by balpars: malware analysis, reverse engineering, CTF writeups and applied cryptography.',
   // The author of the site, used in the footer, SEO, and RSS feed.
   author: 'balpars',
   // Keywords for SEO, used in the meta tags.
@@ -21,7 +21,9 @@ const config: SiteConfig = {
   // Whether Astro should resolve trailing slashes in URLs or not.
   // This value is used in the astro.config.mjs file and in the "Search" component to make sure pagefind links match this setting.
   // It is not recommended to change this, since most links existing in the site currently do not have trailing slashes.
-  trailingSlashes: false,
+  // GitHub Pages serves every page as a folder (/posts/x/) and redirects /posts/x
+  // there with a 301, so links, canonical URLs and the sitemap use the slash form.
+  trailingSlashes: true,
   // The navigation links to display in the header.
   navLinks: [
     {

@@ -3,7 +3,8 @@ import type { GetStaticPaths } from 'astro'
 import Layout from '~/layouts/Layout.astro'
 import { SeriesGroup, TagsGroup, getSortedPosts, postUrl } from '~/utils'
 import { postPaths } from '~/staticPaths'
-import { getLangFromUrl, seriesLabel, t } from '~/i18n'
+import { getLangFromUrl, localizePath, seriesLabel, t } from '~/i18n'
+import { blogPostingSchema, breadcrumbSchema } from '~/seo'
 import PostPreview from '~/components/PostPreview.astro'
 import DividerText from '~/components/DividerText.astro'
 import { getCollection, render, type CollectionEntry } from 'astro:content'
@@ -17,7 +18,7 @@ import PostInfo from '~/components/PostInfo.astro'
 import ScrollUpButton from '~/components/ScrollUpButton.astro'
 import type { Collation } from '~/types'
 import ChevronsRight from '~/icons/chevrons-right.svg'
-import { getPostSequenceContext } from '~/utils'
+import { getPostSequenceContext, postSlug } from '~/utils'
 
 export const getStaticPaths = (async () => {
   return postPaths('en')
@@ -25,6 +26,24 @@ export const getStaticPaths = (async () => {
 
 const { post, prev, next } = Astro.props
 const lang = getLangFromUrl(Astro.url)
+const site = Astro.site!
+const pageUrl = new URL(postUrl(post, lang), site).href
+const schema = [
+  blogPostingSchema({
+    url: pageUrl,
+    title: post.data.title,
+    description: post.data.description,
+    published: post.data.published,
+    image: new URL(`/social-cards/${postSlug(post)}.png`, site).href,
+    tags: post.data.tags,
+    lang,
+  }),
+  breadcrumbSchema([
+    { name: t(lang, 'nav.home'), url: new URL(localizePath('/', lang), site).href },
+    { name: t(lang, 'nav.archive'), url: new URL(localizePath('/posts', lang), site).href },
+    { name: post.data.title, url: pageUrl },
+  ]),
+]
 const postData = post.data
 const { headings, Content: PostContent } = await render(post)
 const addendum = await getCollection('addendum')
@@ -67,6 +86,8 @@ if (postData.tags && postData.tags.length > 0) {
   description={postData.description}
   author={postData.author}
   tags={postData.tags}
+  publishedTime={postData.published}
+  schema={schema}
 >
   <article class="max-w-full py-7.5" data-pagefind-body>
     {

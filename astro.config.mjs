@@ -23,6 +23,8 @@ import remarkMath from 'remark-math' /* for latex math support */
 import rehypeKatex from 'rehype-katex' /* again, for latex math support */
 import remarkGemoji from './src/plugins/remark-gemoji' /* for shortcode emoji support */
 import rehypePixelated from './src/plugins/rehype-pixelated' /* Custom plugin to handle pixelated images */
+import rehypeDemoteHeadings from './src/plugins/rehype-demote-headings' /* One <h1> per page */
+import { postLastModified } from './src/sitemapDates.mjs' /* lastmod for the sitemap */
 
 // https://astro.build/config
 export default defineConfig({
@@ -42,6 +44,8 @@ export default defineConfig({
       remarkGemoji,
     ],
     rehypePlugins: [
+      // Must run before the heading ids so the table of contents gets the final levels
+      rehypeDemoteHeadings,
       [rehypeHeadingIds, { headingIdCompat: true }],
       [rehypeAutolinkHeadings, { behavior: 'wrap' }],
       rehypeTitleFigure,
@@ -64,7 +68,14 @@ export default defineConfig({
     plugins: [tailwindcss()],
   },
   integrations: [
-    sitemap(),
+    sitemap({
+      // Tag pages are noindex (they only repeat post previews), so they stay out too
+      filter: (page) => !/\/tags\//.test(new URL(page).pathname),
+      serialize(item) {
+        const lastmod = postLastModified(new URL(item.url).pathname)
+        return lastmod ? { ...item, lastmod } : item
+      },
+    }),
     expressiveCode({
       themes: siteConfig.themes.include,
       useDarkModeMediaQuery: false,

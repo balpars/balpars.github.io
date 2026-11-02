@@ -8,34 +8,51 @@ import SelectThemeLoader from '~/components/SelectThemeLoader.astro'
 import siteConfig from '~/site.config'
 import { pick, resolveThemeColorStyles } from '~/utils'
 import crypto from 'crypto'
-import { activeLangs, getLangFromUrl, localizePath, t, unlocalizePath } from '~/i18n'
+import {
+  activeLangs,
+  getLangFromUrl,
+  localizePath,
+  t,
+  unlocalizePath,
+  withTrailingSlash,
+} from '~/i18n'
 
 interface Props {
   title?: string
   description?: string
   tags?: string[]
   author?: string
+  // Set on post pages: marks the page as an article for search engines and social cards
+  publishedTime?: Date
+  // schema.org JSON-LD blocks for this page (see src/seo.ts)
+  schema?: Record<string, unknown>[]
+  // Keep the page out of search results, but still follow its links
+  noindex?: boolean
 }
 
-const { title, description, tags, author } = Astro.props
+const { title, description, tags, author, publishedTime, schema = [], noindex = false } = Astro.props
 const lang = getLangFromUrl(Astro.url)
-// The same page without the language prefix, e.g. "/tr/posts/x" -> "/posts/x"
+// The same page without the language prefix, e.g. "/tr/posts/x/" -> "/posts/x/"
 const basePath = unlocalizePath(Astro.url.pathname)
-const pageUrl = new URL(Astro.url.pathname, Astro.site).href.replace(/\/$/, '') // Remove trailing slash for consistency
+const pageUrl = new URL(withTrailingSlash(Astro.url.pathname), Astro.site).href
 const alternateUrls = activeLangs.map((code) => ({
   lang: code,
-  href: new URL(localizePath(basePath, code), Astro.site).href.replace(/\/$/, ''),
+  href: new URL(localizePath(basePath, code), Astro.site).href,
 }))
-const pageType = basePath.startsWith('/posts') ? 'article' : 'website'
-const pageTitle = title ? `${title} - ${siteConfig.title}` : siteConfig.title
+const pageType = publishedTime ? 'article' : 'website'
+// Google cuts titles around 60 characters: add the site name only when it fits
+const titleWithSite = title ? `${title} - ${siteConfig.title}` : siteConfig.title
+const pageTitle = title && titleWithSite.length > 60 ? title : titleWithSite
 const pageDescription = description || t(lang, 'site.description')
 const pageAuthor = author || siteConfig.author
-const pageImage =
-  pageType === 'article'
-    ? Astro.url.origin +
-      basePath.replace(/\/posts\//, '/social-cards/') +
-      '.png'
-    : `${Astro.url.origin}/social-cards/__default.png`
+// Posts have their own social card image, everything else shares the default one
+const postSlugMatch = basePath.match(/^\/posts\/([^/]+)\/?$/)
+const pageImage = new URL(
+  pageType === 'article' && postSlugMatch
+    ? `/social-cards/${postSlugMatch[1]}.png`
+    : '/social-cards/__default.png',
+  Astro.site,
+).href
 const pageKeywords = [
   ...new Set(siteConfig.tags.concat(tags || []).map((word) => word.toLowerCase())),
 ].join(', ')
@@ -138,11 +155,24 @@ let generatedCss: string = cssLines.join('\n')
     <meta name="title" content={pageTitle} />
     <meta name="description" content={pageDescription} />
     <meta name="author" content={pageAuthor} />
+    {noindex && <meta name="robots" content="noindex, follow" />}
+    <meta property="og:site_name" content={siteConfig.title} />
     <meta property="og:title" content={pageTitle} />
     <meta property="og:description" content={pageDescription} />
     <meta property="og:url" content={pageUrl} />
     <meta property="og:type" content={pageType} />
     {pageImage && <meta property="og:image" content={pageImage} />}
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    {
+      publishedTime && (
+        <>
+          <meta property="article:published_time" content={publishedTime.toISOString()} />
+          <meta property="article:author" content={pageAuthor} />
+          {tags?.map((tag) => <meta property="article:tag" content={tag} />)}
+        </>
+      )
+    }
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={pageTitle} />
     <meta name="twitter:description" content={pageDescription} />
@@ -165,13 +195,24 @@ let generatedCss: string = cssLines.join('\n')
       href={new URL('rss.xml', Astro.site)}
     />
     <title>{pageTitle}</title>
+    {
+      schema.map((block) => (
+        <script is:inline type="application/ld+json" set:html={JSON.stringify(block).replace(/</g, '\\u003c')} />
+      ))
+    }
     <script is:inline>
-      // Hide the content until the terminal has "run" this page's command and prints it.
+      // Only after a click inside the site: hide the content until the terminal has
+      // "run" the command, then it gets printed. Visitors arriving from outside
+      // (search results, shared links, crawlers) see the content right away.
       // Skipped for reduced motion; always undone after 5 seconds in case anything fails.
-      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        document.documentElement.classList.add('term-printing')
-        setTimeout(() => document.documentElement.classList.remove('term-printing'), 5000)
-      }
+      try {
+        const session = JSON.parse(sessionStorage.getItem('terminal-session') || 'null')
+        const motionOk = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        if (motionOk && session && session.pending === location.pathname) {
+          document.documentElement.classList.add('term-printing')
+          setTimeout(() => document.documentElement.classList.remove('term-printing'), 5000)
+        }
+      } catch {}
     </script>
     <style is:global define:vars={baseCssVars}></style>
     <style is:inline set:html={generatedCss}></style>
