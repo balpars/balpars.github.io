@@ -1,5 +1,5 @@
 ---
-title: "One Model, Two Machines: Running an LLM That Fits on Neither"
+title: "Running an LLM Across Two Machines with llama.cpp RPC"
 author: balpars
 published: 2026-11-01
 draft: false

@@ -11,7 +11,7 @@ toc: true
 series: 'Cryptography Basics'
 ---
 
-	# Okuyamadığımız Veri Üzerinde Hesap Yapmak
+# Okuyamadığımız Veri Üzerinde Hesap Yapmak
 
 ## Çıkış Noktası
 

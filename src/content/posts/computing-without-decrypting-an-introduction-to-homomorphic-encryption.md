@@ -1,5 +1,5 @@
 ---
-title: "Computing Without Decrypting: An Introduction to Homomorphic Encryption"
+title: "Homomorphic Encryption: Computing Without Decrypting"
 author: balpars
 published: 2026-08-12
 draft: false
@@ -10,7 +10,7 @@ toc: true
 series: 'Cryptography Basics'
 ---
 
-	# Computing on Data You Cannot Read
+# Computing on Data You Cannot Read
 
 ## Motivation
 
@@ -18,7 +18,7 @@ We are pretty good at encrypting data.
 
 When data is stored on disk, we can encrypt it.
 
-When data travels across a network, we can protect it with TLS.
+When data travels across a network, we can protect it with TLS, which agrees on its keys with a key exchange like [Diffie-Hellman](/posts/diffie-hellman-key-exchange/).
 
 The problem starts when we actually want to **use** that data.
 

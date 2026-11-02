@@ -112,7 +112,7 @@ Bob, g üzeri b mod n'yi hesaplayarak bg'yi elde ediyor.
 
 ```
 ag = g**a mod n
-bg = g**b mob n
+bg = g**b mod n
 ```
 
 Sonuçlar n'den küçük çıkacak ve ag ile bg'ye bakarak a'nın ya da b'nin ne olduğunu bulmak imkânsız.

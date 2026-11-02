@@ -1,5 +1,5 @@
 ---
-title: "The Key from Diffie-Hellman"
+title: "Diffie-Hellman Key Exchange, Explained Step by Step"
 author: balpars
 published: 2024-03-02
 draft: false
@@ -27,7 +27,7 @@ used almost everywhere where we need to exchange keys.
 
 In essence we are using some public variables and combine it with our private variables to generate the same key.
 
-In the first part, I will explain the concept at high level then we will delve into mathmetics behind.
+In the first part, I will explain the concept at high level then we will delve into the mathematics behind it.
 
 Bob and Alice will generate the same key on their own, so they can talk privately in an insecure network.
 
@@ -111,7 +111,7 @@ Bob calculates g to the power of b mod n, generating bg.
 
 ```
 ag = g**a mod n
-bg = g**b mob n
+bg = g**b mod n
 ```
 
 Results will be less than n, from ag and bg, it's impossible to know what a or b was.
@@ -143,9 +143,11 @@ Truth is Diffie-Hellman is never used by itself because by default it provides n
 
 Discrete Logarithms problem is very computationally expensive problem, but dedicated organizations like NSA or other security agencies of world may have more than enough resources to attempt bruteforce.
 
-I will cover these problems, especially the man-in-the-middle aspect of key exchanges in future a post. If you are interested, you can use these keywords to do your own research.
+I will cover these problems, especially the man-in-the-middle aspect of key exchanges in a future post. If you are interested, you can use these keywords to do your own research.
 
 - RSA, PKI, SSL Certificates, Digital Signature
+
+The next post in this series, [Homomorphic Encryption: Computing Without Decrypting](/posts/computing-without-decrypting-an-introduction-to-homomorphic-encryption/), goes a step further: computing on data while it stays encrypted.
 
 ## Sources and Further Reading 
 

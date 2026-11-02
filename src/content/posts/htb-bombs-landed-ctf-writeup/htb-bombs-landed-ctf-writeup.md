@@ -1,5 +1,5 @@
 ---
-title: Hack The Box Bombs Landed CTF Detailed Writeup
+title: "HTB Bombs Landed Writeup: Reversing with Ghidra and GDB"
 published: 2024-02-23
 author: balpars
 draft: false
@@ -35,6 +35,8 @@ There are some interesting strings. We see ptrace, which is used by debuggers to
 3. We then see memset is filling the buffer that mmap allocated, with `0xc3` which is the x86 assembly opcode for the `RET` instruction (according to a certain AI)
 4. Following our memory_address variable, we see that some data is being written to address it points to.
 5. Then we see a function call to our memory_address, which indicates that the code above unpacked a function to the memory region that our memory_address points to.
+
+Unpacking code into memory at runtime is a favorite malware trick too; I walk through a real, multi-stage example in [Malware Analysis for Beginners: Unpacking Lokibot by Hand](/posts/analyzing-your-first-malware/).
 
 There’s nothing more we can do here, because we do not know what is in the memory region. We need to use a debugger to continue.
 

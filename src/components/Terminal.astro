@@ -6,6 +6,7 @@
 // - Readers can type too. It is a deliberately tiny shell over a fixed, fake file
 //   system (posts, tags, series, about.md); cd/cat to a page behaves exactly
 //   like clicking its link. Nothing typed here runs anywhere.
+// - On narrow screens it docks to the bottom of the screen like a game console.
 // - Easter egg: 2 minutes on a page runs ./mine_bitcoin.sh (only prints text).
 //   The castle (./castle_age.sh) shows up when someone "attacks" the shell.
 import siteConfig from '~/site.config'
@@ -1425,6 +1426,23 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
     cursor: text;
   }
 
+  /* Narrow screens: docked to the bottom of the screen, always in view */
+  @media (max-width: 767px) {
+    .terminal {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 40;
+      margin: 0;
+      height: calc(7.5rem + env(safe-area-inset-bottom));
+      padding-bottom: env(safe-area-inset-bottom);
+      border-bottom: none;
+      border-radius: 10px 10px 0 0;
+      box-shadow: 0 -10px 30px rgb(0 0 0 / 0.35);
+    }
+  }
+
   .terminal-bar {
     display: flex;
     flex-shrink: 0;
@@ -1559,6 +1577,18 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
   @media (prefers-reduced-motion: reduce) {
     .terminal-screen .cursor {
       animation: none;
+    }
+  }
+
+  /* Room at the end of the page for the docked terminal, and the scroll-up
+     button moves above it */
+  @media (max-width: 767px) {
+    body:has([data-terminal]) {
+      padding-bottom: calc(8rem + env(safe-area-inset-bottom));
+    }
+
+    body:has([data-terminal]) .scroll-up {
+      bottom: calc(8.5rem + env(safe-area-inset-bottom));
     }
   }
 
