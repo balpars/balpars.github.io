@@ -72,8 +72,27 @@ const addendumCollection = defineCollection({
     }),
 })
 
+// Standalone "Red Team Field Guide": one entry per section, surfaced as its
+// own page under /red-team/<slug> with /red-team as the index. Not part of the
+// blog's posts, so it stays out of the archive and RSS.
+const redteamCollection = defineCollection({
+  loader: glob({
+    pattern: '**/*.md',
+    base: './src/content/redteam',
+  }),
+  schema: () =>
+    z.object({
+      title: z.string(),
+      order: z.number(),
+      part: z.string(),
+      description: z.string(),
+      toc: z.boolean().optional().default(true),
+    }),
+})
+
 export const collections = {
   posts: postsCollection,
   home: homeCollection,
   addendum: addendumCollection,
+  redteam: redteamCollection,
 }

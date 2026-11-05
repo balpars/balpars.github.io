@@ -1,0 +1,62 @@
+---
+// One page per Red Team Field Guide section, with its own table of contents
+// and previous/next navigation. Content lives in the "redteam" collection.
+import type { GetStaticPaths } from 'astro'
+import Layout from '~/layouts/Layout.astro'
+import TableOfContents from '~/components/TableOfContents.astro'
+import ScrollUpButton from '~/components/ScrollUpButton.astro'
+import ChevronsRight from '~/icons/chevrons-right.svg'
+import ChevronsLeft from '~/icons/chevrons-left.svg'
+import { getCollection, render } from 'astro:content'
+
+export const getStaticPaths = (async () => {
+  const sections = (await getCollection('redteam')).sort((a, b) => a.data.order - b.data.order)
+  return sections.map((entry, i) => ({
+    params: { slug: entry.id },
+    props: { entry, prev: sections[i - 1], next: sections[i + 1] },
+  }))
+}) satisfies GetStaticPaths
+
+const { entry, prev, next } = Astro.props
+const { Content, headings } = await render(entry)
+---
+
+<Layout title={entry.data.title} description={entry.data.description}>
+  <article class="max-w-full py-7.5" data-pagefind-body>
+    <div class="md:mx-2">
+      <a href="/red-team/" class="text-sm text-link hover:underline">← Red Team Field Guide</a>
+      <h1 class="mt-2 mb-4 text-[1.75rem] text-heading1 font-semibold">
+        <span class="text-accent/80" aria-hidden="true"># </span>{entry.data.title}
+      </h1>
+    </div>
+    <div class="flex flex-col xl:flex-row xl:items-start xl:gap-1 2xl:gap-18">
+      {entry.data.toc && headings.length > 0 && <TableOfContents headings={headings} />}
+      <div class="mb-5 prose rt-prose xl:min-w-full 2xl:min-w-full">
+        <Content />
+      </div>
+    </div>
+    <nav class="mt-8 flex justify-between gap-4 md:mx-2">
+      {
+        prev ? (
+          <a href={`/red-team/${prev.id}/`} class="button flex items-center gap-2">
+            <ChevronsLeft class="size-5 shrink-0" />
+            <span>{prev.data.title}</span>
+          </a>
+        ) : (
+          <span />
+        )
+      }
+      {
+        next ? (
+          <a href={`/red-team/${next.id}/`} class="button flex items-center gap-2 text-right">
+            <span>{next.data.title}</span>
+            <ChevronsRight class="size-5 shrink-0" />
+          </a>
+        ) : (
+          <span />
+        )
+      }
+    </nav>
+  </article>
+  <ScrollUpButton />
+</Layout>

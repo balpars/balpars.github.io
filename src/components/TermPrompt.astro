@@ -1,0 +1,78 @@
+---
+// A decorative, NON-BLOCKING terminal flourish for the Red Team Field Guide
+// pages: a shell prompt that types out a command with a blinking cursor. The
+// page content is rendered normally and is never hidden or delayed by this, so
+// it does not block navigation. Without JS (or with reduced motion) the full
+// command line is shown statically.
+interface Props {
+  cmd: string
+}
+const { cmd } = Astro.props
+---
+
+<div class="term-prompt" aria-hidden="true" data-cmd={cmd}>
+  <span class="tp-user">balpars@journey</span><span class="tp-dim">:</span><span class="tp-path">~</span><span
+    class="tp-dim">$ </span
+  ><span class="tp-cmd">{cmd}</span><span class="tp-cursor"></span>
+</div>
+
+<script>
+  // Progressive enhancement only: content is already on the page. We just
+  // retype the command for effect. If anything here no-ops, the full command
+  // is already visible (server-rendered), so nothing is blocked.
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!reduce) {
+    for (const el of document.querySelectorAll<HTMLElement>('.term-prompt')) {
+      const cmd = el.dataset.cmd || ''
+      const out = el.querySelector<HTMLElement>('.tp-cmd')
+      if (!out || !cmd) continue
+      out.textContent = ''
+      let i = 0
+      const tick = () => {
+        out.textContent = cmd.slice(0, i)
+        if (i++ < cmd.length) setTimeout(tick, 26)
+      }
+      tick()
+    }
+  }
+</script>
+
+<style>
+  .term-prompt {
+    font-size: 0.85rem;
+    line-height: 1.4;
+    margin-bottom: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: color-mix(in srgb, var(--theme-foreground), transparent 20%);
+  }
+  .tp-user {
+    color: var(--theme-accent);
+    font-weight: 600;
+  }
+  .tp-path {
+    color: var(--theme-link, var(--theme-accent));
+  }
+  .tp-dim {
+    color: color-mix(in srgb, var(--theme-foreground), transparent 45%);
+  }
+  .tp-cursor {
+    display: inline-block;
+    width: 0.6ch;
+    height: 1.05em;
+    translate: 0 0.18em;
+    margin-left: 0.1ch;
+    background: var(--theme-accent);
+    animation: tp-blink 1.1s steps(1) infinite;
+  }
+  @keyframes tp-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tp-cursor {
+      animation: none;
+    }
+  }
+</style>

@@ -28,9 +28,20 @@ interface Props {
   schema?: Record<string, unknown>[]
   // Keep the page out of search results, but still follow its links
   noindex?: boolean
+  // Show the interactive terminal banner. Off for plain reference pages.
+  showTerminal?: boolean
 }
 
-const { title, description, tags, author, publishedTime, schema = [], noindex = false } = Astro.props
+const {
+  title,
+  description,
+  tags,
+  author,
+  publishedTime,
+  schema = [],
+  noindex = false,
+  showTerminal = true,
+} = Astro.props
 const lang = getLangFromUrl(Astro.url)
 // The same page without the language prefix, e.g. "/tr/posts/x/" -> "/posts/x/"
 const basePath = unlocalizePath(Astro.url.pathname)
@@ -202,20 +213,6 @@ let generatedCss: string = cssLines.join('\n')
         <script is:inline type="application/ld+json" set:html={JSON.stringify(block).replace(/</g, '\\u003c')} />
       ))
     }
-    <script is:inline>
-      // Only after a click inside the site: hide the content until the terminal has
-      // "run" the command, then it gets printed. Visitors arriving from outside
-      // (search results, shared links, crawlers) see the content right away.
-      // Skipped for reduced motion; always undone after 5 seconds in case anything fails.
-      try {
-        const session = JSON.parse(sessionStorage.getItem('terminal-session') || 'null')
-        const motionOk = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        if (motionOk && session && session.pending === location.pathname) {
-          document.documentElement.classList.add('term-printing')
-          setTimeout(() => document.documentElement.classList.remove('term-printing'), 5000)
-        }
-      } catch {}
-    </script>
     <style is:global define:vars={baseCssVars}></style>
     <style is:inline set:html={generatedCss}></style>
     {themeMode === 'light-dark-auto' && <LightDarkAutoThemeLoader />}
@@ -226,7 +223,7 @@ let generatedCss: string = cssLines.join('\n')
       class="flex flex-col max-w-3xl min-h-screen border-accent/10 m-auto p-3 sm:py-5 sm:px-6 md:py-10"
     >
       <Header />
-      <Terminal />
+      {showTerminal && <Terminal />}
       <main class="flex flex-col py-1">
         <slot />
       </main>

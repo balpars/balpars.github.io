@@ -630,3 +630,20 @@ article img {
   height: 1px;
   background: color-mix(in srgb, var(--theme-accent) 35%, transparent);
 }
+
+/* Red Team Field Guide: keep wide tables, code blocks and long inline code
+   inside the text column so they never overflow the page. Tables and code
+   scroll horizontally; long inline tokens wrap. */
+.rt-prose table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.rt-prose pre {
+  overflow-x: auto;
+}
+.rt-prose code:not(.expressive-code code) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,60 @@
+---
+// Index for the Red Team Field Guide. The guide is split into one page per
+// section (src/content/redteam); this page is the entry point: intro plus a
+// grouped, linked list of every section. Reachable from the top bar, kept out
+// of the blog archive and RSS, and shown without the terminal banner.
+import Layout from '~/layouts/Layout.astro'
+import ScrollUpButton from '~/components/ScrollUpButton.astro'
+import { getCollection } from 'astro:content'
+
+const sections = (await getCollection('redteam')).sort((a, b) => a.data.order - b.data.order)
+
+// Group sections by their "part", preserving section order.
+type Group = { title: string; items: typeof sections }
+const parts: Group[] = []
+for (const s of sections) {
+  let g = parts.find((p) => p.title === s.data.part)
+  if (!g) {
+    g = { title: s.data.part, items: [] as unknown as typeof sections }
+    parts.push(g)
+  }
+  g.items.push(s)
+}
+
+const title = 'Red Team Field Guide'
+const description =
+  'A penetration testing and red team field reference, split into sections: planning, reconnaissance, exploitation, Active Directory, cloud, C2 and quick reference.'
+---
+
+<Layout title={title} description={description}>
+  <article class="max-w-full py-7.5" data-pagefind-body>
+    <div class="md:mx-2">
+      <h1 class="mb-6 text-[1.75rem] text-heading1 font-semibold">
+        <span class="text-accent/80" aria-hidden="true"># </span>{title}
+      </h1>
+    </div>
+    {
+      parts.map((p) => (
+        <section class="mb-8 md:mx-2">
+          <h2 class="mb-3 border-b border-accent/20 pb-1 text-xl font-semibold text-heading2">
+            {p.title}
+          </h2>
+          <ul class="flex list-none flex-col gap-3 pl-0">
+            {p.items.map((s) => (
+              <li>
+                <a
+                  href={`/red-team/${s.id}/`}
+                  class="font-medium text-link hover:underline"
+                >
+                  {s.data.title}
+                </a>
+                <p class="mt-0.5 text-sm text-foreground/70">{s.data.description}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))
+    }
+  </article>
+  <ScrollUpButton />
+</Layout>

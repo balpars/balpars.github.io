@@ -38,6 +38,10 @@ const config: SiteConfig = {
       name: 'Posts',
       url: '/posts',
     },
+    {
+      name: 'Red Team Field Guide',
+      url: '/red-team',
+    },
     // {
     //   name: 'GitHub',
     //   url: 'https://github.com/balpars',

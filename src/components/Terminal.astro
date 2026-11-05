@@ -109,6 +109,10 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
   const session = loadSession()
   let busy = false
   let refocus = false
+  // Last time the reader scrolled the page. The idle easter egg waits until
+  // they have stopped, so it never fires in the middle of reading/scrolling.
+  let lastScrollAt = 0
+  window.addEventListener('scroll', () => (lastScrollAt = Date.now()), { passive: true })
   // Keys typed after clicking the terminal but before the prompt is back
   let pendingKeys = ''
   let quietThemeChange = false
@@ -202,14 +206,20 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
     const p = document.createElement('p')
     p.innerHTML =
       line.kind === 'cmd'
-        ? `<span class="prompt">${escapeHtml(line.cwd)} $</span> ${escapeHtml(line.text)}`
+        ? `<span class="prompt">balpars@journey:${escapeHtml(line.cwd)} $</span> ${escapeHtml(line.text)}`
         : line.html
     if (line.kind === 'out') p.className = ['output', line.cls].filter(Boolean).join(' ')
     return p
   }
 
   function scrollToEnd() {
-    if (screen) screen.scrollTop = screen.scrollHeight
+    if (!screen) return
+    screen.scrollTop = screen.scrollHeight
+    // Run again after layout settles (long lines wrap on narrow screens, late
+    // reflow when docked at the bottom) so the last line is reliably in view.
+    requestAnimationFrame(() => {
+      if (screen) screen.scrollTop = screen.scrollHeight
+    })
   }
 
   function setTitle() {
@@ -248,7 +258,7 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
     // The real input is invisible; the typed text is mirrored in front of a block
     // cursor, so it looks like a terminal whether or not the input has focus
     p.innerHTML =
-      `<span class="prompt">${escapeHtml(session.cwd)} $</span>` +
+      `<span class="prompt">balpars@journey:${escapeHtml(session.cwd)} $</span>` +
       `<span class="line-input"><span class="mirror"></span><span class="cursor" aria-hidden="true">▌</span>` +
       `<input class="term-input" aria-label="Terminal command, type help" spellcheck="false" autocomplete="off" autocapitalize="off" /></span>`
     screen?.append(p)
@@ -1214,7 +1224,7 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
   // Types a command at the prompt, then "presses Enter"
   async function run(step: Step) {
     const p = document.createElement('p')
-    p.innerHTML = `<span class="prompt">${escapeHtml(session.cwd)} $</span> `
+    p.innerHTML = `<span class="prompt">balpars@journey:${escapeHtml(session.cwd)} $</span> `
     const typed = document.createElement('span')
     typed.className = 'typing'
     p.append(typed)
@@ -1287,7 +1297,10 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
     if (session[key]) return
     setTimeout(async function attempt() {
       if (session[key]) return
-      if (busy || currentInput()?.value) return setTimeout(attempt, 15_000)
+      // Wait while busy, while the reader is typing, or while they are actively
+      // scrolling the page, so the egg never interrupts reading.
+      if (busy || currentInput()?.value || Date.now() - lastScrollAt < 4000)
+        return setTimeout(attempt, 15_000)
       busy = true
       session[key] = true
       const hadFocus = document.activeElement === currentInput()
@@ -1336,40 +1349,9 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
     scheduleEgg('bitcoinShown', BITCOIN_DELAY, './mine_bitcoin.sh')
   }
 
-  // Clicking a link on the site types its command first, then navigates
-  async function navigate(url: URL) {
-    busy = true
-    session.keepFocus = document.activeElement === currentInput()
-    removeIdlePrompt()
-    const rect = terminal!.getBoundingClientRect()
-    if (rect.bottom < 0 || rect.top > window.innerHeight) {
-      window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' })
-      await wait(400)
-    }
-    for (const step of stepsFor(url.pathname, session.cwd)) await run(step)
-    session.pending = url.pathname
-    saveSession()
-    window.location.href = url.href
-  }
-
-  document.addEventListener('click', (event) => {
-    if (!terminal || event.defaultPrevented || event.button !== 0) return
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-    const link = (event.target as Element).closest?.('a')
-    if (!link || (link.target && link.target !== '_self') || link.hasAttribute('download')) return
-    if (link.closest('dialog')) return
-    const url = new URL(link.href, location.href)
-    if (url.origin !== location.origin) return
-    if (url.pathname === location.pathname && url.hash) return
-    if (/\.\w+$/.test(url.pathname)) return // rss.xml and other files
-    event.preventDefault()
-    if (url.pathname === location.pathname) {
-      window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' })
-      return
-    }
-    if (busy) return
-    navigate(url)
-  })
+  // The terminal is cosmetic: links navigate natively, so a click is never
+  // delayed by the terminal typing a command first, and the destination page's
+  // content is never hidden while it "prints".
 
   // Clicking the terminal (but not a link in it) puts the cursor in the prompt.
   // While the terminal is still typing there is no prompt yet: remember the click
@@ -1435,8 +1417,10 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
       bottom: 0;
       z-index: 40;
       margin: 0;
-      height: calc(7.5rem + env(safe-area-inset-bottom));
-      padding-bottom: env(safe-area-inset-bottom);
+      height: calc(7.5rem + max(env(safe-area-inset-bottom), 0.5rem));
+      /* Always keep a gap below the last line (safe-area on notched phones,
+         otherwise a small fixed gap) so the bottom line is never clipped. */
+      padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
       border-bottom: none;
       border-radius: 10px 10px 0 0;
       box-shadow: 0 -10px 30px rgb(0 0 0 / 0.35);
@@ -1584,17 +1568,12 @@ const fsJson = JSON.stringify(fs).replace(/</g, '\\u003c')
      button moves above it */
   @media (max-width: 767px) {
     body:has([data-terminal]) {
-      padding-bottom: calc(8rem + env(safe-area-inset-bottom));
+      padding-bottom: calc(8rem + max(env(safe-area-inset-bottom), 0.5rem));
     }
 
     body:has([data-terminal]) .scroll-up {
-      bottom: calc(8.5rem + env(safe-area-inset-bottom));
+      bottom: calc(8.5rem + max(env(safe-area-inset-bottom), 0.5rem));
     }
   }
 
-  /* Set in <head> before the page paints; the terminal script prints the content
-     and removes it. The head script also removes it after a few seconds as a fallback. */
-  html.term-printing main {
-    visibility: hidden;
-  }
 </style>
